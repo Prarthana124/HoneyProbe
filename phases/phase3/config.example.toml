@@ -1,0 +1,18 @@
+[engine]
+apply_changes = false
+stop_on_error = false
+approved_controls = [
+  "restrict-file-permissions",
+  "restrict-configuration-file-permissions",
+]
+allowed_roots = ["sample-target"]
+
+[[file_permission_targets]]
+path = "sample-target"
+forbid_group_write = true
+forbid_world_write = true
+
+[[configuration_file_targets]]
+path = "sample-target/honeyprobe.toml"
+forbid_group_write = true
+forbid_world_write = true

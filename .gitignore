@@ -1,0 +1,35 @@
+cat > .gitignore <<'EOF'
+# Dependencies and build outputs
+node_modules/
+**/node_modules/
+dist/
+build/
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+
+# Local databases and runtime state
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+EOF

@@ -1,0 +1,7 @@
+{
+  "events": [
+    {"source_ip":"10.10.10.50","destination_port":22,"protocol":"TCP","service":"SSH","event_type":"LOGIN_FAILED","username":"root","status":"failed","session_id":"S900"},
+    {"source_ip":"10.10.10.50","destination_port":22,"protocol":"TCP","service":"SSH","event_type":"COMMAND","command":"whoami","status":"success","session_id":"S900"},
+    {"source_ip":"10.10.10.50","destination_port":22,"protocol":"TCP","service":"SSH","event_type":"FINGERPRINT_PROBE","command":"version probe; banner grab","response_ms":650,"session_id":"S900"}
+  ]
+}

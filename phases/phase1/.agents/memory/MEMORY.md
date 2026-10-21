@@ -1,0 +1,1 @@
+- [HoneyProbe SQLite storage](sqlite-storage-decision.md) — keep the event store in SQLite and label demo/adapter integrations honestly.

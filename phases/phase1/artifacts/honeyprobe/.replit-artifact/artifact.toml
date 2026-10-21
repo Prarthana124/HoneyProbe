@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "HoneyProbe"
+description = "A cyber-deception monitoring platform for a controlled lab: inspect persisted decoy events, investigate sessions, validate system health, and generate honest analytics and reports."
+version = "1.0.0"
+id = "artifacts/honeyprobe"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23159
+
+[services.development]
+run = "pnpm --filter @workspace/honeyprobe run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/honeyprobe", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/honeyprobe/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23159"
+BASE_PATH = "/"

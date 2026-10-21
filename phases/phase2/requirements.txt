@@ -1,0 +1,2 @@
+# No third-party packages are required for the Phase 2 runnable demo.
+# The implementation uses Python 3.10+ standard-library HTTP and SQLite.

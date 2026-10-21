@@ -1,0 +1,5 @@
+Source files copied per phase (files copied, entries skipped):
+phase1: 288 copied, 819 skipped
+phase2: 7 copied, 4 skipped
+phase3: 19 copied, 0 skipped
+phase4: 195 copied, 72518 skipped

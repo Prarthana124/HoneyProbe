@@ -1,0 +1,707 @@
+openapi: 3.1.0
+info:
+  # Keep the title stable; the generated client paths depend on it.
+  title: Api
+  version: 0.1.0
+  description: HoneyProbe controlled-lab telemetry and operator API.
+servers:
+  - url: /api
+    description: HoneyProbe API
+tags:
+  - name: health
+  - name: overview
+  - name: events
+  - name: sessions
+  - name: decoys
+  - name: analytics
+  - name: self-tests
+  - name: reports
+  - name: demo
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Compatibility health check
+      responses:
+        "200":
+          description: API process is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /health:
+    get:
+      operationId: getSystemHealth
+      tags: [health]
+      summary: Check API and SQLite health
+      responses:
+        "200":
+          description: Component health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemHealth"
+  /overview:
+    get:
+      operationId: getOverview
+      tags: [overview]
+      summary: Read dashboard metrics and recent activity
+      parameters:
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Until"
+      responses:
+        "200":
+          description: Dashboard data computed from persisted events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Overview"
+  /events:
+    get:
+      operationId: getEvents
+      tags: [events]
+      summary: Search and page through events
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Severity"
+        - $ref: "#/components/parameters/SourceType"
+        - $ref: "#/components/parameters/EventType"
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Until"
+        - $ref: "#/components/parameters/SortBy"
+        - $ref: "#/components/parameters/SortDirection"
+      responses:
+        "200":
+          description: Filtered event page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventPage"
+    post:
+      operationId: ingestEvent
+      tags: [events]
+      summary: Validate and persist a normalized event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventInput"
+      responses:
+        "201":
+          description: Persisted event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "422":
+          description: Invalid event input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /events/export:
+    get:
+      operationId: exportEventsCsv
+      tags: [events]
+      summary: Export the currently filtered event set as CSV
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Severity"
+        - $ref: "#/components/parameters/SourceType"
+        - $ref: "#/components/parameters/EventType"
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Until"
+        - $ref: "#/components/parameters/SortBy"
+        - $ref: "#/components/parameters/SortDirection"
+      responses:
+        "200":
+          description: UTF-8 CSV of the matching event records
+          content:
+            text/csv:
+              schema:
+                type: string
+  /events/{event_id}:
+    get:
+      operationId: getEvent
+      tags: [events]
+      summary: Get an event and its sanitized metadata
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200":
+          description: Event details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "404":
+          description: Event not found
+  /sessions:
+    get:
+      operationId: getSessions
+      tags: [sessions]
+      summary: List correlated sessions
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Severity"
+        - $ref: "#/components/parameters/SourceType"
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Until"
+      responses:
+        "200":
+          description: Session page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionPage"
+  /sessions/{session_id}:
+    get:
+      operationId: getSession
+      tags: [sessions]
+      summary: Get a session and chronological event timeline
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionDetail"
+        "404":
+          description: Session not found
+    patch:
+      operationId: updateSessionStatus
+      tags: [sessions]
+      summary: Update investigation status
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionStatusInput"
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+  /decoys:
+    get:
+      operationId: getDecoys
+      tags: [decoys]
+      summary: Get real health and counts for each decoy integration
+      responses:
+        "200":
+          description: Decoy integration status
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Decoy"
+  /decoys/web/interaction:
+    post:
+      operationId: recordWebInteraction
+      tags: [decoys]
+      summary: Record a safe interaction with the fictional web decoy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebInteractionInput"
+      responses:
+        "201":
+          description: Recorded web decoy event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+  /decoys/database/interaction:
+    post:
+      operationId: recordDatabaseInteraction
+      tags: [decoys]
+      summary: Record a safe database-decoy simulation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DatabaseInteractionInput"
+      responses:
+        "201":
+          description: Recorded database-decoy event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+  /imports/cowrie:
+    post:
+      operationId: importCowrieEvents
+      tags: [decoys]
+      summary: Validate and ingest a bounded set of Cowrie-style log records
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CowrieImportInput"
+      responses:
+        "201":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+  /analytics:
+    get:
+      operationId: getAnalytics
+      tags: [analytics]
+      summary: Calculate analytics from stored events
+      parameters:
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Until"
+        - $ref: "#/components/parameters/SourceType"
+        - $ref: "#/components/parameters/Severity"
+      responses:
+        "200":
+          description: Event analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analytics"
+  /self-tests:
+    get:
+      operationId: getSelfTests
+      tags: [self-tests]
+      summary: Read the last self-test results
+      responses:
+        "200":
+          description: Most recent test results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SelfTestResult"
+  /self-tests/run:
+    post:
+      operationId: runSelfTests
+      tags: [self-tests]
+      summary: Execute real component checks
+      responses:
+        "200":
+          description: Results from this run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfTestRun"
+  /reports/summary:
+    get:
+      operationId: getReportSummary
+      tags: [reports]
+      summary: Calculate a filtered report summary
+      parameters:
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Until"
+        - $ref: "#/components/parameters/SourceType"
+        - $ref: "#/components/parameters/Severity"
+      responses:
+        "200":
+          description: Report content from stored events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportSummary"
+  /reports/export:
+    get:
+      operationId: exportReportCsv
+      tags: [reports]
+      summary: Export filtered records as CSV
+      parameters:
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Until"
+        - $ref: "#/components/parameters/SourceType"
+        - $ref: "#/components/parameters/Severity"
+      responses:
+        "200":
+          description: UTF-8 CSV
+          content:
+            text/csv:
+              schema:
+                type: string
+  /reports/html:
+    get:
+      operationId: exportReportHtml
+      tags: [reports]
+      summary: Generate a printable HTML report
+      parameters:
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Until"
+        - $ref: "#/components/parameters/SourceType"
+        - $ref: "#/components/parameters/Severity"
+      responses:
+        "200":
+          description: Self-contained printable HTML
+          content:
+            text/html:
+              schema:
+                type: string
+  /demo/generate:
+    post:
+      operationId: generateDemoEvents
+      tags: [demo]
+      summary: Generate synthetic events in a development/test environment only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DemoGenerationInput"
+      responses:
+        "201":
+          description: Synthetic events persisted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoGenerationResult"
+        "403":
+          description: Disabled outside development/test environments
+  /demo/reset:
+    post:
+      operationId: resetDemoEvents
+      tags: [demo]
+      summary: Remove only synthetic demo events
+      responses:
+        "200":
+          description: Reset count; observed events are preserved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoResetResult"
+components:
+  parameters:
+    EventId:
+      name: event_id
+      in: path
+      required: true
+      schema: { type: string }
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Search:
+      name: q
+      in: query
+      schema: { type: string, maxLength: 200 }
+    Severity:
+      name: severity
+      in: query
+      schema:
+        type: string
+        enum: [info, low, medium, high, critical]
+    SourceType:
+      name: source_type
+      in: query
+      schema:
+        type: string
+        enum: [web, ssh, database, mobile]
+    EventType:
+      name: event_type
+      in: query
+      schema: { type: string, maxLength: 100 }
+    Since:
+      name: since
+      in: query
+      schema: { type: string, format: date-time }
+    Until:
+      name: until
+      in: query
+      schema: { type: string, format: date-time }
+    SortBy:
+      name: sort_by
+      in: query
+      schema: { type: string, enum: [timestamp, severity, event_type], default: timestamp }
+    SortDirection:
+      name: sort_direction
+      in: query
+      schema: { type: string, enum: [asc, desc], default: desc }
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status: { type: string }
+      required: [status]
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+        detail: { type: string }
+      required: [error]
+    SystemHealth:
+      type: object
+      properties:
+        status: { type: string, enum: [healthy, degraded] }
+        environment: { type: string }
+        database:
+          type: object
+          properties:
+            status: { type: string, enum: [healthy, unavailable] }
+            engine: { type: string, const: SQLite }
+            path_label: { type: string }
+          required: [status, engine, path_label]
+        checked_at: { type: string, format: date-time }
+      required: [status, environment, database, checked_at]
+    Event:
+      type: object
+      properties:
+        id: { type: string }
+        timestamp: { type: string, format: date-time }
+        source_type: { type: string, enum: [web, ssh, database, mobile] }
+        event_type: { type: string }
+        severity: { type: string, enum: [info, low, medium, high, critical] }
+        source_address: { type: ["string", "null"] }
+        target: { type: string }
+        session_id: { type: ["string", "null"] }
+        summary: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        environment: { type: string, enum: [local, test, configured_lab] }
+        ingestion_source: { type: string }
+        processing_status: { type: string, enum: [accepted, rejected] }
+      required: [id, timestamp, source_type, event_type, severity, target, summary, metadata, environment, ingestion_source, processing_status]
+    EventInput:
+      type: object
+      properties:
+        timestamp: { type: ["string", "null"], format: date-time }
+        source_type: { type: string, enum: [web, ssh, database, mobile] }
+        event_type: { type: string, minLength: 1, maxLength: 100 }
+        severity: { type: string, enum: [info, low, medium, high, critical] }
+        source_address: { type: ["string", "null"], maxLength: 64 }
+        target: { type: string, minLength: 1, maxLength: 300 }
+        session_id: { type: ["string", "null"], maxLength: 128 }
+        summary: { type: string, minLength: 1, maxLength: 500 }
+        metadata: { type: object, additionalProperties: true }
+        environment: { type: string, enum: [local, test, configured_lab] }
+        ingestion_source: { type: string, minLength: 1, maxLength: 100 }
+      required: [source_type, event_type, severity, target, summary, metadata, environment, ingestion_source]
+    EventPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Event" } }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+      required: [items, total, limit, offset]
+    Metric:
+      type: object
+      properties:
+        value: { type: integer }
+        context: { type: string }
+      required: [value, context]
+    Overview:
+      type: object
+      properties:
+        total_events: { $ref: "#/components/schemas/Metric" }
+        suspicious_events: { $ref: "#/components/schemas/Metric" }
+        unique_sessions: { $ref: "#/components/schemas/Metric" }
+        active_decoys: { $ref: "#/components/schemas/Metric" }
+        telemetry_health: { type: string, enum: [healthy, degraded] }
+        activity:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket: { type: string, format: date-time }
+              count: { type: integer }
+            required: [bucket, count]
+        severity_counts:
+          type: object
+          additionalProperties: { type: integer }
+        recent_events:
+          type: array
+          items: { $ref: "#/components/schemas/Event" }
+        sessions:
+          type: array
+          items: { $ref: "#/components/schemas/Session" }
+        decoys:
+          type: array
+          items: { $ref: "#/components/schemas/Decoy" }
+        last_updated: { type: string, format: date-time }
+      required: [total_events, suspicious_events, unique_sessions, active_decoys, telemetry_health, activity, severity_counts, recent_events, sessions, decoys, last_updated]
+    Session:
+      type: object
+      properties:
+        session_id: { type: string }
+        first_seen: { type: string, format: date-time }
+        last_seen: { type: string, format: date-time }
+        event_count: { type: integer }
+        source_types: { type: array, items: { type: string } }
+        event_categories: { type: array, items: { type: string } }
+        highest_severity: { type: string, enum: [info, low, medium, high, critical] }
+        investigation_status: { type: string, enum: [unreviewed, investigating, resolved] }
+      required: [session_id, first_seen, last_seen, event_count, source_types, event_categories, highest_severity, investigation_status]
+    SessionPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Session" } }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+      required: [items, total, limit, offset]
+    SessionDetail:
+      type: object
+      properties:
+        session: { $ref: "#/components/schemas/Session" }
+        events: { type: array, items: { $ref: "#/components/schemas/Event" } }
+      required: [session, events]
+    SessionStatusInput:
+      type: object
+      properties:
+        investigation_status: { type: string, enum: [unreviewed, investigating, resolved] }
+      required: [investigation_status]
+    Decoy:
+      type: object
+      properties:
+        id: { type: string, enum: [web, ssh, database, mobile] }
+        name: { type: string }
+        integration_type: { type: string }
+        status: { type: string, enum: [connected, not_configured, unavailable, demo_mode] }
+        description: { type: string }
+        event_count: { type: integer }
+        last_event_at: { type: ["string", "null"], format: date-time }
+        setup_instructions: { type: string }
+      required: [id, name, integration_type, status, description, event_count, setup_instructions]
+    WebInteractionInput:
+      type: object
+      properties:
+        route: { type: string, minLength: 1, maxLength: 200 }
+        interaction: { type: string, enum: [route_visit, login_attempt, protected_route_attempt] }
+        method: { type: string, maxLength: 10 }
+        session_id: { type: ["string", "null"], maxLength: 128 }
+        username: { type: ["string", "null"], maxLength: 120 }
+      required: [route, interaction, method]
+    DatabaseInteractionInput:
+      type: object
+      properties:
+        operation_category: { type: string, enum: [connect, read, write, schema_probe, denied_operation] }
+        target: { type: string, minLength: 1, maxLength: 200 }
+        session_id: { type: ["string", "null"], maxLength: 128 }
+      required: [operation_category, target]
+    CowrieEntry:
+      type: object
+      properties:
+        eventid: { type: string, maxLength: 100 }
+        src_ip: { type: ["string", "null"], maxLength: 64 }
+        session: { type: ["string", "null"], maxLength: 128 }
+        timestamp: { type: ["string", "null"], format: date-time }
+        message: { type: string, maxLength: 500 }
+      required: [eventid, message]
+    CowrieImportInput:
+      type: object
+      properties:
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 250
+          items: { $ref: "#/components/schemas/CowrieEntry" }
+      required: [entries]
+    ImportResult:
+      type: object
+      properties:
+        imported: { type: integer }
+        events: { type: array, items: { $ref: "#/components/schemas/Event" } }
+      required: [imported, events]
+    Analytics:
+      type: object
+      properties:
+        total_events: { type: integer }
+        demo_events: { type: integer }
+        observed_events: { type: integer }
+        events_over_time:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket: { type: string, format: date-time }
+              count: { type: integer }
+            required: [bucket, count]
+        severity_counts: { type: object, additionalProperties: { type: integer } }
+        source_counts: { type: object, additionalProperties: { type: integer } }
+        category_counts: { type: object, additionalProperties: { type: integer } }
+        session_activity: { type: array, items: { $ref: "#/components/schemas/Session" } }
+        top_routes:
+          type: array
+          items:
+            type: object
+            properties:
+              route: { type: string }
+              count: { type: integer }
+            required: [route, count]
+      required: [total_events, demo_events, observed_events, events_over_time, severity_counts, source_counts, category_counts, session_activity, top_routes]
+    SelfTestResult:
+      type: object
+      properties:
+        name: { type: string }
+        status: { type: string, enum: [pass, fail, not_run] }
+        duration_ms: { type: integer }
+        last_run: { type: ["string", "null"], format: date-time }
+        diagnostic: { type: string }
+      required: [name, status, duration_ms, diagnostic]
+    SelfTestRun:
+      type: object
+      properties:
+        results: { type: array, items: { $ref: "#/components/schemas/SelfTestResult" } }
+        passed: { type: integer }
+        failed: { type: integer }
+        completed_at: { type: string, format: date-time }
+      required: [results, passed, failed, completed_at]
+    ReportSummary:
+      type: object
+      properties:
+        generated_at: { type: string, format: date-time }
+        period_start: { type: ["string", "null"], format: date-time }
+        period_end: { type: ["string", "null"], format: date-time }
+        includes_demo_data: { type: boolean }
+        total_events: { type: integer }
+        severity_counts: { type: object, additionalProperties: { type: integer } }
+        category_counts: { type: object, additionalProperties: { type: integer } }
+        source_counts: { type: object, additionalProperties: { type: integer } }
+        active_sessions: { type: array, items: { $ref: "#/components/schemas/Session" } }
+        events: { type: array, items: { $ref: "#/components/schemas/Event" } }
+      required: [generated_at, includes_demo_data, total_events, severity_counts, category_counts, source_counts, active_sessions, events]
+    DemoGenerationInput:
+      type: object
+      properties:
+        count: { type: integer, minimum: 1, maximum: 30, default: 5 }
+      required: [count]
+    DemoGenerationResult:
+      type: object
+      properties:
+        created: { type: integer }
+        events: { type: array, items: { $ref: "#/components/schemas/Event" } }
+      required: [created, events]
+    DemoResetResult:
+      type: object
+      properties:
+        deleted: { type: integer }
+        preserved_observed_events: { type: boolean, const: true }
+      required: [deleted, preserved_observed_events]

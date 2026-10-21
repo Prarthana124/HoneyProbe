@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Security Operations Console"
+description = "A security operations dashboard for monitoring incidents, attack behaviour, adaptation history, system status, and report integrity. It includes a clearly labelled demo data mode until upstream Phase 1–3 outputs are connected."
+version = "1.0.0"
+id = "artifacts/security-console"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22713
+
+[services.development]
+run = "pnpm --filter @workspace/security-console run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/security-console", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/security-console/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22713"
+BASE_PATH = "/"

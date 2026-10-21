@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "honeyprobe-module3"
+version = "0.1.0"
+description = "HoneyProbe Module 3: isolated self-testing and adaptive hardening"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "HoneyProbe Module 3 Team" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Typing :: Typed",
+]
+
+[project.scripts]
+honeyprobe-module3 = "honeyprobe_module3.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["honeyprobe_module3"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
