@@ -4,10 +4,10 @@
 
 | Phase | Entry points and APIs | Dependencies and persistence | Existing tests |
 |---|---|---|---|
-| **1 — operator platform** | React UI: `phases/phase1/artifacts/honeyprobe/src/App.tsx`; Express/Clerk gateway: `phases/phase1/artifacts/api-server/src/index.ts`; FastAPI: `phases/phase1/artifacts/api-server/python/honeyprobe/main.py`. Main API includes health, overview, event ingestion/search/export, sessions, decoys, Cowrie import, analytics, self-tests, reports, evidence, source profiles, and dry-run action audit. | pnpm/TypeScript React + Express and Python 3.13 FastAPI/Pydantic/httpx/uvicorn. Python `sqlite3` is the canonical persisted store, default `phases/phase1/artifacts/api-server/data/honeyprobe.sqlite3`; override with `HONEYPROBE_DB_PATH`. The workspace's Drizzle scaffold is not the active event database. | `phases/phase1/artifacts/api-server/tests/test_honeyprobe.py` (unittest + FastAPI TestClient). |
+| **1 — operator platform** | React UI: `phases/phase1/artifacts/honeyprobe/src/App.tsx`; Express/Clerk gateway: `phases/phase1/artifacts/api-server/src/index.ts`; FastAPI: `phases/phase1/artifacts/api-server/python/honeyprobe/main.py`. Main API includes health, overview, event ingestion/search/export, sessions, decoys, Cowrie import, analytics, self-tests, reports, evidence, source profiles, and dry-run action audit. | pnpm/TypeScript React + Express and Python 3.13 FastAPI/Pydantic/httpx/uvicorn. Python `sqlite3` is the canonical persisted store, default `phases/phase1/artifacts/api-server/data/honeyprobe.sqlite3`; override with `HONEYPROBE_DB_PATH`. The workspace's Drizzle scaffold is not the active event database. | `phases/phase1/artifacts/api-server/tests/test_honeyprobe.py` and `test_service_restart.py` (unittest; includes a real API process restart persistence check). |
 | **2 — detection and profiling rules** | Standalone standard-library server/CLI: `phases/phase2/app.py`; server routes `/api/health`, `/api/dashboard`, `/api/events` (POST), and `/api/demo` (POST). Pure functions `normalize_event` and `detect_event` are reused by the Phase 1 Cowrie adapter. | Python standard library only. The standalone server writes its own SQLite file (`HONEYPROBE_DB`, default `phases/phase2/data/honeyprobe.db`); that server/database is intentionally not started by the integrated app. | `phases/phase2/tests/test_phase2.py` (unittest). |
 | **3 — self-tests and adaptive-hardening policy** | Package CLI `honeyprobe-module3 --config <file>` from `phases/phase3/src/honeyprobe_module3/cli.py`; the Phase 1 adapter is `phases/phase1/artifacts/api-server/python/honeyprobe/phase3_adapter.py`. This phase has no HTTP API or database. | Python 3.11+, standard-library runtime; setuptools is its build backend. TOML policy config selects file permission checks. Integrated results are saved by the Phase 1 API in its SQLite store. The adapter forces `apply_changes=False`. | `phases/phase3/tests/test_config.py`, `test_configuration_permissions.py`, and `test_engine.py` (unittest). |
-| **4 — Security Operations Console** | Vite/React entry: `phases/phase4/artifacts/security-console/src/main.tsx`; routes in `src/App.tsx`; live views in `src/pages/live-security-pages.tsx`. Same-origin `/api` requests are proxied to the Phase 1 gateway on internal port 8080. `src/data/demo-data.ts` remains the source for the explicit demo preview only. | React/TypeScript, Vite, Tailwind, Clerk browser SDK. The Phase 4 Express artifact server is only an unused health-check scaffold; it is not started, has no event database, and is not the console's API. | No Phase 4 frontend test suite was present in the imported project. Typechecking and production build are the available frontend checks. |
+| **4 — Security Operations Console** | Vite/React entry: `phases/phase4/artifacts/security-console/src/main.tsx`; routes in `src/App.tsx`; live views in `src/pages/live-security-pages.tsx`. Same-origin `/api` requests are proxied to the Phase 1 gateway on `HONEYPROBE_GATEWAY_PORT` (default 8080). `src/data/demo-data.ts` remains the source for the explicit demo preview only. | React/TypeScript, Vite, Tailwind, Clerk browser SDK. The Phase 4 Express artifact server is only an unused health-check scaffold; it is not started, has no event database, and is not the console's API. | No Phase 4 frontend test suite was present in the imported project. Typechecking and production build are the available frontend checks. |
 
 ## Shared runtime and data flow
 
@@ -44,7 +44,8 @@ Evidence uses a canonical JSON event snapshot, per-event SHA-256, and a linked S
 
 - Start the Replit **Project** workflow or run `bash scripts/start-honeyprobe.sh` from the repository root.
 - The launcher runs only the Phase 1 API gateway/FastAPI service and the Phase 4 Security Operations Console.
-- The console listens on 5000; the gateway listens on 8080; FastAPI binds only to `127.0.0.1:8180`.
+- The console listens on 5000; the gateway listens on `HONEYPROBE_GATEWAY_PORT` (default 8080); FastAPI binds only to `127.0.0.1` on `HONEYPROBE_INTERNAL_PORT` (default 8180).
+- The launcher validates that the three ports are distinct and passes the selected gateway port to the Vite proxy.
 - Port 5000 is the only Replit web-preview mapping. The API ports are internal and should not be exposed as separate public services.
 - Do not start the old standalone Phase 1 UI, Phase 1 API, or Phase 4 UI workflows alongside this launcher. Phase 2 standalone server and Phase 4 API scaffold are not part of this runtime.
 
@@ -58,9 +59,11 @@ Evidence uses a canonical JSON event snapshot, per-event SHA-256, and a linked S
 | `HONEYPROBE_ALLOWED_EMAILS` | Comma-separated verified operator email allowlist; configure in environment settings, not source. |
 | `HONEYPROBE_DB_PATH` | Optional SQLite file path; default is the Phase 1 API data directory. Preserve the existing file when restarting. |
 | `HONEYPROBE_ENV` | `development` by default in the launcher; synthetic generation is restricted to development/demo/test. |
+| `HONEYPROBE_GATEWAY_PORT` | Optional internal Express port; default `8080`. |
+| `HONEYPROBE_INTERNAL_PORT` | Optional loopback FastAPI port; default `8180`. |
 | `HONEYPROBE_CORS_ORIGINS` | Optional explicit browser origins for direct external clients. Same-origin Vite proxy needs no extra origin. |
 | `VITE_CLERK_PROXY_URL` | Clerk browser proxy setting. Leave platform-managed behavior intact; do not hardcode this in the UI. |
-| `PORT`, `HONEYPROBE_INTERNAL_PORT`, `BASE_PATH` | Set by the single launcher for the UI/gateway; normally do not override them manually. |
+| `PORT`, `BASE_PATH` | Set by the single launcher for the UI; normally do not override them manually. |
 
 Clerk is not configured in the current imported workspace. The UI presents an authentication-setup screen and keeps live data locked until Clerk keys and the verified operator allowlist are configured. Never add a development bypass.
 
@@ -79,25 +82,25 @@ python -m unittest discover -s tests -v
 
 # Phase 3 package
 cd ../phase3
-python -m unittest discover -s tests -v
+PYTHONPATH=src python -m unittest discover -s tests -v
 
 # Phase 1 TypeScript checks/build
 cd ../phase1
 pnpm run typecheck
-pnpm run build
+PORT=5000 BASE_PATH=/ HONEYPROBE_GATEWAY_PORT=8080 pnpm run build
 
 # Phase 4 TypeScript checks/build
 cd ../phase4
 pnpm --filter @workspace/security-console run typecheck
-pnpm --filter @workspace/security-console run build
+PORT=5000 BASE_PATH=/ HONEYPROBE_GATEWAY_PORT=8080 pnpm run build
 ```
 
-Record actual run results and any package-source blockers in the root `replit.md`. Do not treat API unit tests as proof that the signed-in browser/gateway flow works when Clerk is unavailable.
+The actual test counts, build outcomes, and security scan summary for 2026-10-22 are recorded in the root `README.md`. Do not treat API unit tests as proof that a signed-in browser flow works when Clerk is unavailable.
 
 ## Known limits
 
 - The current workspace has no configured Clerk tenant/keys; live UI authorization cannot be exercised end-to-end until the user configures Clerk and the allowlist.
-- The current environment's first locked Python install attempt failed because the package host certificate was not trusted. Do not disable TLS verification; retry only after the package-source/certificate issue is resolved.
+- The dependency audit still reports `braces@3.0.3` without a listed fixed version and `postcss-selector-parser@6.0.10`, for which the listed fix is a major version. See the README verification record.
 - The web/database decoys are simulations. No Cowrie/SSH service is started; Cowrie is a bounded log import. Mobile/Android telemetry and external threat-intelligence feeds are not connected.
 - Source profiles are local aggregates of persisted addresses/events; there is no external attribution or reputation enrichment.
 - Phase 3 is limited to configured sample-target checks and dry-run previews. No production configuration changes or automated response are performed.

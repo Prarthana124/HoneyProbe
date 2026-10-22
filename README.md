@@ -86,4 +86,4 @@ Security tools were run on the same date:
 
 The Replit preview was visually checked. It correctly displays **Authentication setup required** and a clearly labeled demo-preview option. Clerk is not configured in this workspace, so a signed-in live dashboard and real Clerk session authorization have **not** been tested. Configure Clerk and the verified operator allowlist before expecting live data in the browser.
 
-Do not publish this controlled-lab application without a separate network-isolation and access-control review. No deployment, commit, or push was performed for this work.
+Do not publish this controlled-lab application without a separate network-isolation and access-control review. No deployment or push was performed. No manual `git commit` command was run; at verification time, the local branch was one commit ahead of `origin/main` (`8279f9c`). Confirm the repository state before release.

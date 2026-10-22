@@ -4,12 +4,14 @@
 
 - Start the single Replit **Project** workflow, or run `bash scripts/start-honeyprobe.sh` at the workspace root.
 - The launcher starts the Phase 1 Express/Clerk gateway + FastAPI backend and the Phase 4 Security Operations Console.
-- Phase 4 Vite listens on port 5000. It proxies same-origin `/api` requests to the gateway on internal port 8080.
-- FastAPI binds only to `127.0.0.1:8180`. The launcher checks the gateway health before starting the UI.
+- Phase 4 Vite listens on port 5000. It proxies same-origin `/api` requests to `HONEYPROBE_GATEWAY_PORT` (default 8080).
+- FastAPI binds only to `127.0.0.1` on `HONEYPROBE_INTERNAL_PORT` (default 8180). The launcher checks gateway health before starting the UI.
+- The launcher validates that the web, gateway, and internal API ports are distinct. The Vite proxy uses the same gateway port setting.
 - Port 5000 is the only web-preview mapping. Do not start the former Phase 1 UI/API or Phase 4 UI workflows at the same time; those duplicate the services and ports.
 - The standalone Phase 2 server and Phase 4 API scaffold are not part of this integrated runtime.
 
 The launcher installs the locked Phase 1 and Phase 4 pnpm workspace dependencies when missing. It runs `uv sync --locked --project phases/phase1` if the Phase 1 Python environment is incomplete.
+This is the single supported startup path; it preserves the workspace and the existing SQLite database.
 
 ## Authentication and environment
 
@@ -28,9 +30,11 @@ Optional/runtime variables:
 
 - `HONEYPROBE_DB_PATH` selects the SQLite file. Default: `phases/phase1/artifacts/api-server/data/honeyprobe.sqlite3`. Keep the existing file when restarting.
 - `HONEYPROBE_ENV` defaults to `development`; synthetic event generation is disabled outside development/demo/test.
+- `HONEYPROBE_GATEWAY_PORT` selects the Express gateway port (default `8080`).
+- `HONEYPROBE_INTERNAL_PORT` selects the loopback FastAPI port (default `8180`).
 - `HONEYPROBE_CORS_ORIGINS` is only needed for an explicitly configured cross-origin client. The integrated same-origin proxy does not need it.
 - `VITE_CLERK_PROXY_URL` is platform-managed for production; do not hardcode a proxy path.
-- The launcher manages `PORT`, `HONEYPROBE_INTERNAL_PORT`, and `BASE_PATH`; do not override them for the normal workflow.
+- The launcher manages console `PORT` (`5000`) and `BASE_PATH` (`/`); do not override them for the normal workflow.
 
 Clerk is currently not configured in this imported workspace. The console shows a setup notice until authentication is configured; live data remains locked. The explicit Phase 4 demo preview can still be viewed and remains labeled as static demo data. API failures never fall back to demo data.
 
@@ -60,35 +64,35 @@ python -m unittest discover -s tests -v
 
 # Phase 3 tests
 cd ../phase3
-python -m unittest discover -s tests -v
+PYTHONPATH=src python -m unittest discover -s tests -v
 
 # Phase 1 TypeScript checks and workspace production build
 cd ../phase1
 pnpm run typecheck
-pnpm run build
+PORT=5000 BASE_PATH=/ HONEYPROBE_GATEWAY_PORT=8080 pnpm run build
 
 # Phase 4 frontend
 cd ../phase4
 pnpm --filter @workspace/security-console run typecheck
-pnpm --filter @workspace/security-console run build
+PORT=5000 BASE_PATH=/ HONEYPROBE_GATEWAY_PORT=8080 pnpm run build
 ```
 
-Security scans: dependency audit, static analysis, and dataflow/privacy scan are run through Replit's Security tools. Results are recorded below only after the scanners actually complete.
+Security scans are run through Replit's Security tools.
 
 ### Verification record
 
-Update this section after each verification run. Do not infer browser authorization success from API unit tests. The signed-in UI cannot be visually verified until Clerk is configured.
-
-- Backend tests: pending.
-- Phase 1 / Phase 4 frontend typechecks: pending.
-- Production builds: pending.
-- Security scans: pending.
-- Replit preview: pending; startup may be blocked by unavailable Python package downloads or missing Clerk configuration.
+- **2026-10-22:** Phase 1 API/integration tests: 11 passed; Phase 2 tests: 4 passed; Phase 3 tests: 16 passed.
+- Phase 1 workspace typecheck and Phase 4 console typecheck passed.
+- Phase 1 and Phase 4 production workspace builds passed; both printed a non-fatal source-map warning for a UI tooltip component.
+- Dependency audit: 0 critical, 2 high, 2 moderate findings; remaining findings are `braces@3.0.3` with no fix listed and `postcss-selector-parser@6.0.10` with a major-version fix listed. SAST: 0 findings. HoundDog: 0 findings.
+- Integrated Project workflow started; gateway health returned 200. The preview shows the intended authentication-setup screen because Clerk is not configured.
+- Unauthenticated gateway data and adaptive-action requests returned 503. A forged operator header was rejected and the audit remained empty. The backend integration test verifies direct unauthorized dry-run rejection and persistence across a real API process restart.
+- A signed-in Clerk session and live authenticated browser dashboard remain untested until Clerk is configured. See the root `README.md` for commands and detailed results.
 
 ## Known limitations
 
 - No Clerk tenant/keys are configured yet; live console authorization requires the workspace owner to configure them and the verified operator allowlist.
-- The current locked Python package installation attempt failed with a package-host TLS certificate trust error. Do not disable TLS verification. Until package sources are reachable, the backend service and Phase 1 backend tests cannot run.
+- The dependency audit still reports `braces@3.0.3` without a listed fixed version and `postcss-selector-parser@6.0.10`, whose available fix is a major version update. Do not force that update without compatibility testing.
 - Web/database decoys are controlled simulations; no SSH/Cowrie service starts. Mobile telemetry, threat-intelligence enrichment, and case-management integrations are absent.
 - Source profiles are aggregated from local events only; there is no external attribution.
 - Phase 3 only runs configured sample-target checks and dry-run previews. No automated production changes are performed.
