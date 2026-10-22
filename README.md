@@ -30,6 +30,8 @@ Keep the single Project workflow active. Do not start the individual Phase 1 or 
 
 Protected live API routes require a Clerk session and a verified email address on the server-side operator allowlist. Missing or incomplete configuration fails closed; there is no unauthenticated development bypass.
 
+For development, supply matching test/development credentials from the same Clerk instance: `CLERK_SECRET_KEY` for the server, `CLERK_PUBLISHABLE_KEY` for the server, and the same publishable key as `VITE_CLERK_PUBLISHABLE_KEY` for the browser. Add `HONEYPROBE_ALLOWED_EMAILS` as a comma-separated list of verified operator email addresses. Keep the secret key in Replit Secrets; set the publishable key and allowlist in the workspace's development environment settings. `VITE_CLERK_PROXY_URL` is optional. These values must come from the project owner's configured Clerk instance; do not paste credentials into chat or source files. The current workspace has none of these Clerk values configured, so authenticated Live verification remains blocked until they are supplied.
+
 Configure these in Replit Secrets/environment settings. Never put their values in source control:
 
 | Variable | Purpose |

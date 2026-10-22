@@ -19,6 +19,7 @@ import {
   isSimulatedEvent,
   type AdaptiveActionAudit,
   type DetectionFinding,
+  type EvidenceRecord,
   type EventPage,
   type HoneyProbeEvent,
   type Overview,
@@ -236,7 +237,20 @@ export function LiveDashboard() {
       honeyProbeRequest<DetectionFinding[]>('/api/findings?include_demo=false&limit=8'),
     refetchInterval: 10_000,
   });
-  const error = overview.error ?? events.error ?? profiles.error ?? findings.error;
+  const evidence = useQuery({
+    queryKey: ['honeyprobe', 'evidence', 'observed'],
+    queryFn: () =>
+      honeyProbeRequest<EvidenceRecord[]>(
+        '/api/evidence?include_demo=false&limit=100',
+      ),
+    refetchInterval: 10_000,
+  });
+  const error =
+    overview.error ??
+    events.error ??
+    profiles.error ??
+    findings.error ??
+    evidence.error;
   const data = overview.data;
   const highCount =
     (data?.severity_counts.high ?? 0) + (data?.severity_counts.critical ?? 0);
@@ -250,7 +264,11 @@ export function LiveDashboard() {
         action={<LiveModeBadge />}
       />
       {error && <ApiError error={error as Error} />}
-      {(overview.isLoading || events.isLoading || profiles.isLoading) && !data ? (
+      {(overview.isLoading ||
+        events.isLoading ||
+        profiles.isLoading ||
+        evidence.isLoading) &&
+      !data ? (
         <LoadingPanel />
       ) : (
         <>
@@ -336,24 +354,54 @@ export function LiveDashboard() {
             </div>
             {findings.data && findings.data.length > 0 ? (
               <div className="divide-y divide-border/70">
-                {findings.data.map((finding) => (
-                  <div key={finding.id} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusPill value={finding.severity.toUpperCase()} />
-                        <span className="text-sm font-medium">{finding.rule_name}</span>
-                        <span className="mono text-[10px] text-muted-foreground">{finding.detector}</span>
+                {findings.data.map((finding) => {
+                  const linkedEvidence = evidence.data?.find(
+                    (record) => record.id === finding.evidence_id,
+                  );
+                  return (
+                      <div key={finding.id} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusPill value={finding.severity.toUpperCase()} />
+                            <span className="text-sm font-medium">{finding.rule_name}</span>
+                            <span className="mono text-[10px] text-muted-foreground">{finding.detector}</span>
+                          </div>
+                          <p className="mt-2 text-xs text-muted-foreground">{finding.reason}</p>
+                          <p className="mono mt-2 break-all text-[10px] text-muted-foreground">
+                            Event {finding.event_id} · Evidence {finding.evidence_id}
+                          </p>
+                          {evidence.data && (
+                            <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3">
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                                Persisted evidence snapshot
+                              </p>
+                              {linkedEvidence ? (
+                                <>
+                                  <p className="mt-2 text-[11px] text-muted-foreground">
+                                    Captured {formatDateTime(linkedEvidence.captured_at)} · event{' '}
+                                    {linkedEvidence.event_id}
+                                  </p>
+                                  <p className="mono mt-1 break-all text-[10px] text-muted-foreground">
+                                    SHA-256 {linkedEvidence.sha256}
+                                  </p>
+                                  <p className="mono mt-1 break-all text-[10px] text-muted-foreground">
+                                    Chain {linkedEvidence.chain_hash}
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="mt-2 text-[11px] text-muted-foreground">
+                                  No persisted evidence record matches this finding.
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <time className="shrink-0 text-[10px] text-muted-foreground">
+                          {formatShortTime(finding.created_at)}
+                        </time>
                       </div>
-                      <p className="mt-2 text-xs text-muted-foreground">{finding.reason}</p>
-                      <p className="mono mt-2 text-[10px] text-muted-foreground">
-                        Event {finding.event_id} · Evidence {finding.evidence_id}
-                      </p>
-                    </div>
-                    <time className="shrink-0 text-[10px] text-muted-foreground">
-                      {formatShortTime(finding.created_at)}
-                    </time>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="p-5 text-sm text-muted-foreground">

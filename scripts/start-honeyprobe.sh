@@ -47,10 +47,28 @@ if [[ ! -x "$PHASE1_DIR/node_modules/.bin/tsc" ]] || \
   (cd "$PHASE1_DIR" && pnpm install --frozen-lockfile)
 fi
 
-if [[ ! -x "$PHASE4_DIR/artifacts/security-console/node_modules/.bin/vite" ]] || \
+phase4_console_dependencies_ready() {
+  (
+    cd "$PHASE4_DIR"
+    pnpm --filter @workspace/security-console exec node --input-type=module -e '
+      await import("vite");
+      await import("@vitejs/plugin-react");
+      await import("@tailwindcss/vite");
+      await import("react");
+      await import("@clerk/react");
+    '
+  ) >/dev/null 2>&1
+}
+
+if ! phase4_console_dependencies_ready || \
   [[ ! -x "$PHASE4_DIR/node_modules/.bin/tsc" ]]; then
   echo "Installing the locked Phase 4 console dependencies..."
   (cd "$PHASE4_DIR" && pnpm install --frozen-lockfile)
+fi
+
+if ! phase4_console_dependencies_ready; then
+  echo "Phase 4 console dependencies are not ready after the locked install." >&2
+  exit 1
 fi
 
 if [[ ! -x "$ROOT_DIR/.pythonlibs/bin/python" ]] || \
@@ -58,6 +76,26 @@ if [[ ! -x "$ROOT_DIR/.pythonlibs/bin/python" ]] || \
   echo "Installing the locked Phase 1 Python dependencies..."
   uv sync --locked --project "$PHASE1_DIR"
 fi
+
+assert_port_available() {
+  local port="$1"
+  local label="$2"
+  if ! node - "$port" <<'NODE'
+const net = require("node:net");
+const port = Number(process.argv[2]);
+const server = net.createServer();
+server.once("error", () => process.exit(1));
+server.listen(port, "127.0.0.1", () => server.close());
+NODE
+  then
+    echo "$label port $port is already in use. Stop the standalone API Server artifact before starting the supported Project workflow." >&2
+    exit 1
+  fi
+}
+
+assert_port_available "$WEB_PORT" "HoneyProbe console"
+assert_port_available "$GATEWAY_PORT" "HoneyProbe API gateway"
+assert_port_available "$INTERNAL_PORT" "HoneyProbe internal API"
 
 (
   cd "$PHASE1_DIR"
