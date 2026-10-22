@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "Python FastAPI service dependencies for the HoneyProbe controlled-lab platform"
 requires-python = ">=3.13"
 dependencies = [
+    "anyio>=4.14.2",
+    "certifi>=2026.10.19",
     "fastapi>=0.143.3",
+    "h11>=0.16.0",
     "httpx>=0.28.1",
+    "idna>=3.15",
     "uvicorn>=0.54.0",
 ]

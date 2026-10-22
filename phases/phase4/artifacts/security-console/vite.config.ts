@@ -15,8 +15,19 @@ if (!rawPort) {
 
 const port = Number(rawPort);
 
-if (Number.isNaN(port) || port <= 0) {
+if (!Number.isInteger(port) || port <= 0 || port > 65535) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
+}
+
+const rawGatewayPort = process.env.HONEYPROBE_GATEWAY_PORT ?? '8080';
+const gatewayPort = Number(rawGatewayPort);
+if (
+  !Number.isInteger(gatewayPort) ||
+  gatewayPort <= 0 ||
+  gatewayPort > 65535 ||
+  gatewayPort === port
+) {
+  throw new Error(`Invalid or conflicting HONEYPROBE_GATEWAY_PORT: "${rawGatewayPort}"`);
 }
 
 const basePath = process.env.BASE_PATH;
@@ -71,7 +82,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8080',
+        target: `http://127.0.0.1:${gatewayPort}`,
         changeOrigin: true,
       },
     },

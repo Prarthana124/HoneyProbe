@@ -1,7 +1,7 @@
 import express, { type Request, type RequestHandler } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { clerkMiddleware } from "@clerk/express";
+import { clerkMiddleware, getAuth } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import {

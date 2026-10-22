@@ -537,14 +537,15 @@ def generate_persisted_report() -> ReportDocument:
         "events": [event.model_dump(mode="json") for event in events],
         "evidence": [record.model_dump(mode="json") for record in evidence],
     }
+    document = ReportDocument(**unsigned_document, sha256="")
     canonical_document = json.dumps(
-        unsigned_document,
+        document.model_dump(mode="json", exclude={"sha256"}),
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
     )
     digest = hashlib.sha256(canonical_document.encode("utf-8")).hexdigest()
-    document = ReportDocument(**unsigned_document, sha256=digest)
+    document = document.model_copy(update={"sha256": digest})
     save_generated_report(document)
     return document
 
