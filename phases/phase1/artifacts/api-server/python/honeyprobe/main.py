@@ -4,7 +4,10 @@ import os
 import hashlib
 import json
 import sqlite3
+import threading
+import time
 import uuid
+from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -79,6 +82,7 @@ from honeyprobe.storage import (
     utc_now,
     verify_generated_report,
 )
+from honeyprobe.web_decoy import PAGES as WEB_DECOY_PAGES
 
 
 @asynccontextmanager
@@ -99,6 +103,97 @@ app = FastAPI(
     redoc_url="/api/redoc",
     lifespan=lifespan,
 )
+
+_LOCAL_DECOY_WINDOW_SECONDS = 60.0
+_LOCAL_DECOY_MAX_REQUESTS = 60
+_LOCAL_DECOY_REQUESTS: deque[float] = deque()
+_LOCAL_DECOY_REQUESTS_LOCK = threading.Lock()
+
+
+def _check_local_decoy_rate_limit() -> None:
+    now = time.monotonic()
+    with _LOCAL_DECOY_REQUESTS_LOCK:
+        while (
+            _LOCAL_DECOY_REQUESTS
+            and now - _LOCAL_DECOY_REQUESTS[0] >= _LOCAL_DECOY_WINDOW_SECONDS
+        ):
+            _LOCAL_DECOY_REQUESTS.popleft()
+        if len(_LOCAL_DECOY_REQUESTS) >= _LOCAL_DECOY_MAX_REQUESTS:
+            raise HTTPException(
+                status_code=429,
+                detail="The local web decoy rate limit was reached.",
+            )
+        _LOCAL_DECOY_REQUESTS.append(now)
+
+
+def _local_decoy_response(
+    request: Request,
+    route: str,
+    *,
+    enforce_rate_limit: bool = True,
+) -> HTMLResponse:
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "testclient"}:
+        raise HTTPException(status_code=403, detail="The web decoy is loopback-only.")
+    if enforce_rate_limit:
+        _check_local_decoy_rate_limit()
+    if len(route) > 200:
+        raise HTTPException(status_code=414, detail="Decoy route is too long.")
+
+    normalized_route = f"/{route.strip('/')}" if route.strip("/") else "/"
+    if request.method == "POST" and normalized_route == "/login":
+        interaction = "login_attempt"
+    elif normalized_route == "/admin":
+        interaction = "protected_route_attempt"
+    else:
+        interaction = "route_visit"
+    event = record_web_interaction(
+        WebInteractionInput(
+            route=normalized_route,
+            interaction=interaction,
+            method=request.method,
+        ),
+        simulated=False,
+        detection_input=normalized_route,
+    )
+    known_route = normalized_route in WEB_DECOY_PAGES
+    content = (
+        "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        "<title>Northstar Cloud</title>"
+        '<body style="font:16px system-ui;max-width:48rem;margin:4rem auto;padding:0 1rem">'
+        f"{WEB_DECOY_PAGES.get(normalized_route, '<h1>Page not found</h1>')}"
+        "</body></html>"
+    )
+    return HTMLResponse(
+        content=content,
+        status_code=200 if known_route else 404,
+        headers={"X-HoneyProbe-Event-ID": event.id},
+    )
+
+
+@app.get("/decoy", response_class=HTMLResponse, include_in_schema=False)
+def local_web_decoy_home(request: Request) -> HTMLResponse:
+    return _local_decoy_response(request, "")
+
+
+@app.get("/decoy/{route:path}", response_class=HTMLResponse, include_in_schema=False)
+def local_web_decoy_route(route: str, request: Request) -> HTMLResponse:
+    return _local_decoy_response(request, route)
+
+
+@app.post("/decoy/login", response_class=HTMLResponse, include_in_schema=False)
+async def local_web_decoy_login(request: Request) -> HTMLResponse:
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "testclient"}:
+        raise HTTPException(status_code=403, detail="The web decoy is loopback-only.")
+    _check_local_decoy_rate_limit()
+    if await request.body():
+        raise HTTPException(
+            status_code=400,
+            detail="The local decoy does not accept login fields or credentials.",
+        )
+    return _local_decoy_response(request, "login", enforce_rate_limit=False)
 
 cors_origins = [
     origin.strip()

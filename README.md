@@ -58,7 +58,7 @@ Other settings:
 - **Phase 3** checks run through a read-only adapter that forces `apply_changes=False`; no live adaptive action route is exposed.
 - **Phase 4** reads live overview, event, and reporting endpoints through the same-origin `/api` proxy. Demo fixtures are separate and only shown through **View clearly labeled demo preview**. API errors do not fall back to demo data.
 
-The web/database decoys are controlled simulations. The integrated app does not start an SSH/Cowrie service or external threat feed. Evidence hashes are tamper-evident checksums, not keyed signatures or an independently administered immutable archive.
+The fictional web decoy is a real local HTTP interaction source served only by FastAPI's loopback listener at `127.0.0.1:8180/decoy`; it records bounded visits and feeds route text to Phase 2 in memory. It does not accept credentials, execute paths, or touch files, and it is not exposed through the public web preview. The database decoy remains a logical simulator. The integrated app does not start an SSH/Cowrie service or external threat feed. Evidence hashes are tamper-evident checksums, not keyed signatures or an independently administered immutable archive.
 
 For the phase entry points, API routes, storage details, and test locations, see [`docs/PHASE_INTEGRATION.md`](docs/PHASE_INTEGRATION.md).
 
@@ -68,7 +68,7 @@ Checks run on **2026-10-22**:
 
 | Check | Command | Result |
 |---|---|---|
-| Phase 1 API and integration tests | `cd phases/phase1/artifacts/api-server && HONEYPROBE_ENV=test PYTHONPATH=python uv run --project ../.. python -m unittest discover -s tests -v` | **PASS** — 12 tests, including event → Phase 2 finding → evidence links surviving a real API process restart and chunked request-size enforcement |
+| Phase 1 API and integration tests | `cd phases/phase1/artifacts/api-server && HONEYPROBE_ENV=test PYTHONPATH=python uv run --project ../.. python -m unittest discover -s tests -v` | **PASS** — 15 tests, including a loopback decoy request creating a Phase 2 finding and linked evidence that survive a real API process restart, plus credential rejection and chunked request-size enforcement |
 | Phase 2 tests | `cd phases/phase2 && python -m unittest discover -s tests -v` | **PASS** — 4 tests |
 | Phase 3 tests | `cd phases/phase3 && PYTHONPATH=src python -m unittest discover -s tests -v` | **PASS** — 16 tests |
 | Phase 1 workspace typecheck | `cd phases/phase1 && pnpm run typecheck` | **PASS** |
@@ -76,14 +76,14 @@ Checks run on **2026-10-22**:
 | Phase 1 workspace production build | `cd phases/phase1 && PORT=5000 BASE_PATH=/ HONEYPROBE_GATEWAY_PORT=8080 pnpm run build` | **PASS** — build completed; existing source-map warning in a UI tooltip component |
 | Phase 4 workspace production build | `cd phases/phase4 && PORT=5000 BASE_PATH=/ HONEYPROBE_GATEWAY_PORT=8080 pnpm run build` | **PASS** — build completed; same non-fatal source-map warning |
 
-The integrated workflow also started successfully. Gateway health returned HTTP 200. With Clerk not configured, a protected event request and an adaptive-action request carrying a caller-supplied operator header both returned HTTP 503 `authentication_unavailable`; the internal adaptive-action audit remained empty. The backend integration test separately confirmed an unauthenticated dry-run request returns 403 and creates no audit record.
+The integrated workflow restarted successfully. Gateway health returned HTTP 200. The web console is on port 5000, the gateway on internal port 8080, and FastAPI is bound to `127.0.0.1:8180`. The local `/decoy` path is not proxied by the gateway (404). With Clerk not configured, protected requests—including a forged operator-header request—return HTTP 503 `authentication_unavailable`; no authorization bypass was added. Backend integration tests separately confirm direct unauthorized dry-run requests return 403 and create no audit record.
 
-Security tools were run against the imported baseline on the same date, before the current findings persistence changes; they were not rerun for this diff:
+Security tools were rerun against the completed changes on the same date:
 
-- Dependency audit: **0 critical, 2 high, 2 moderate** reported instances remain. The high findings are `braces@3.0.3` (the scanner listed no fixed version); the moderate findings are `postcss-selector-parser@6.0.10` (the listed fix is major version 7.1.6). Other fixable findings were addressed in the workspace locks.
+- Dependency audit: **0 critical, 2 high, 2 moderate** reported instances remain across the two phase lockfiles. The high findings are `braces@3.0.3` (no fix listed); the moderate findings are `postcss-selector-parser@6.0.10` (the listed fix is major version 7.1.6). No dependency was changed without compatibility verification.
 - Static analysis (SAST): **0 findings**.
 - Dataflow/privacy scan (HoundDog): **0 findings**.
 
-The Replit preview was visually checked after these changes. It correctly displays **Authentication setup required** and a clearly labeled demo-preview option. Clerk is not configured in this workspace; the `/api/findings` route correctly returns HTTP 503 while authentication is unavailable, so the signed-in live dashboard and real Clerk session authorization have **not** been tested. Configure Clerk and the verified operator allowlist before expecting live data in the browser. The findings panel is typechecked and production-built, and its API path is covered by backend persistence tests.
+The Replit preview was visually checked after restart. It displays **Authentication setup required** and a clearly labeled demo-preview option. Clerk is not configured in this workspace; `/api/findings` returns HTTP 503, so a signed-in Live dashboard, real Clerk session authorization, and the matching finding rendered in the signed-in UI remain **blocked**. No frontend test runner is configured; Phase 4 typechecking, production build, and static preview capture passed. Configure Clerk and the verified operator allowlist before verifying the Live browser workflow.
 
-Do not publish this controlled-lab application without a separate network-isolation and access-control review. No deployment, push, or manual commit was performed. Current workspace state is branch `main`, aligned with `origin/main`, with the current HoneyProbe changes uncommitted. Confirm the repository state before release.
+Do not publish this controlled-lab application without a separate network-isolation and access-control review. No deployment, push, or manual commit was performed. The workspace started on branch `main` aligned with `origin/main`; the current HoneyProbe changes are uncommitted. Confirm the repository state before release.

@@ -40,7 +40,7 @@ Clerk is currently not configured in this imported workspace. The console shows 
 
 ## Four-phase interfaces and storage
 
-- **Phase 1:** React operator UI, Express auth gateway, FastAPI API, and the canonical SQLite event/session/self-test store. Event/API models are in `phases/phase1/artifacts/api-server/python/honeyprobe/models.py`.
+- **Phase 1:** React operator UI, Express auth gateway, loopback FastAPI API, a loopback-only fictional HTTP web decoy, and the canonical SQLite event/session/self-test store. The decoy serves `/decoy` on the internal FastAPI listener, accepts no credentials, analyzes route text in memory through Phase 2, and is not proxied to the public preview. Event/API models are in `phases/phase1/artifacts/api-server/python/honeyprobe/models.py`.
 - **Phase 2:** standard-library server/CLI and a separate SQLite store. Integrated Cowrie imports reuse its `normalize_event` and `detect_event` rules through the Phase 1 adapter; raw messages are analyzed in memory and not persisted.
 - **Phase 3:** Python self-test and adaptive-hardening package. The Phase 1 adapter forces dry-run (`apply_changes=False`) and stores only summary results.
 - **Phase 4:** React Security Operations Console. Live pages read authenticated Phase 1 endpoints; original static fixtures are available only from the explicit demo-preview switch.
@@ -81,19 +81,19 @@ Security scans are run through Replit's Security tools.
 
 ### Verification record
 
-- **2026-10-22:** Phase 1 API/integration tests: 11 passed; Phase 2 tests: 4 passed; Phase 3 tests: 16 passed.
+- **2026-10-22:** Phase 1 API/integration tests: 15 passed, including a real loopback-decoy-to-finding-and-evidence flow surviving an API process restart; Phase 2 tests: 4 passed; Phase 3 tests: 16 passed.
 - Phase 1 workspace typecheck and Phase 4 console typecheck passed.
 - Phase 1 and Phase 4 production workspace builds passed; both printed a non-fatal source-map warning for a UI tooltip component.
-- Dependency audit: 0 critical, 2 high, 2 moderate findings; remaining findings are `braces@3.0.3` with no fix listed and `postcss-selector-parser@6.0.10` with a major-version fix listed. SAST: 0 findings. HoundDog: 0 findings.
-- Integrated Project workflow started; gateway health returned 200. The preview shows the intended authentication-setup screen because Clerk is not configured.
-- Unauthenticated gateway data and adaptive-action requests returned 503. A forged operator header was rejected and the audit remained empty. The backend integration test verifies direct unauthorized dry-run rejection and persistence across a real API process restart.
-- A signed-in Clerk session and live authenticated browser dashboard remain untested until Clerk is configured. See the root `README.md` for commands and detailed results.
+- Fresh dependency audit: 0 critical, 2 high, 2 moderate instances across the phase lockfiles; remaining findings are `braces@3.0.3` with no fix listed and `postcss-selector-parser@6.0.10`, whose available fix is a major version update. SAST: 0 findings. HoundDog: 0 findings.
+- Integrated Project workflow restarted; gateway health returned 200. FastAPI logs show the internal API bound to `127.0.0.1:8180`; the gateway does not proxy `/decoy`. The preview shows the intended authentication-setup screen because Clerk is not configured.
+- Protected gateway requests with forged operator headers returned 503 while Clerk is unavailable. Direct unauthorized dry-run requests are rejected by backend integration tests. Loopback web-decoy event, Phase 2 finding, evidence, and restart persistence are verified with isolated test databases.
+- A signed-in Clerk session and live authenticated browser dashboard remain blocked until Clerk is configured. No frontend test runner is configured. See the root `README.md` for commands and detailed results.
 
 ## Known limitations
 
 - No Clerk tenant/keys are configured yet; live console authorization requires the workspace owner to configure them and the verified operator allowlist.
 - The dependency audit still reports `braces@3.0.3` without a listed fixed version and `postcss-selector-parser@6.0.10`, whose available fix is a major version update. Do not force that update without compatibility testing.
-- Web/database decoys are controlled simulations; no SSH/Cowrie service starts. Mobile telemetry, threat-intelligence enrichment, and case-management integrations are absent.
+- The fictional web decoy is local-only and does not collect credentials or operate on host resources; the database decoy is a simulator and no SSH/Cowrie service starts. Mobile telemetry, threat-intelligence enrichment, and case-management integrations are absent.
 - Source profiles are aggregated from local events only; there is no external attribution.
 - Phase 3 only runs configured sample-target checks and dry-run previews. No automated production changes are performed.
 - Reports currently provide saved JSON, CSV, and printable HTML; no PDF generator, keyed signing, or independently immutable archive is connected.

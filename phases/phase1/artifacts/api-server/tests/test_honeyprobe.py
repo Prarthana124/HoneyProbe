@@ -85,6 +85,59 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertNotIn("password", accepted.json()["metadata"])
         self.assertFalse(accepted.json()["metadata"]["login_data_collected"])
 
+    def test_loopback_web_decoy_records_real_visit_and_phase2_evidence(self) -> None:
+        response = self.client.get("/decoy/%2e%2e/%2e%2e/local-check")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("X-HoneyProbe-Event-ID", response.headers)
+        self.assertNotIn("../../local-check", response.text)
+
+        event_id = response.headers["X-HoneyProbe-Event-ID"]
+        event_response = self.client.get(f"/api/events/{event_id}")
+        self.assertEqual(event_response.status_code, 200)
+        event = event_response.json()
+        self.assertEqual(event["ingestion_source"], "local_web_decoy")
+        self.assertFalse(event["metadata"]["simulated"])
+        self.assertEqual(event["target"], "/unmatched")
+        self.assertTrue(
+            any(
+                item["category"] == "Path Traversal"
+                for item in event["metadata"]["phase2_analysis"]
+            )
+        )
+
+        findings = self.client.get(
+            "/api/findings",
+            params={"event_id": event_id, "include_demo": "true"},
+        )
+        self.assertEqual(findings.status_code, 200)
+        self.assertEqual(len(findings.json()), 1)
+        self.assertEqual(findings.json()[0]["rule_name"], "Path Traversal")
+
+        evidence = self.client.get(f"/api/evidence/{event_id}")
+        self.assertEqual(evidence.status_code, 200)
+        self.assertEqual(findings.json()[0]["evidence_id"], evidence.json()["id"])
+        self.assertNotIn("../../local-check", evidence.text)
+
+    def test_loopback_web_decoy_login_never_accepts_or_persists_credentials(self) -> None:
+        private_marker = "decoy-password-must-not-persist"
+        rejected = self.client.post(
+            "/decoy/login",
+            content=f"password={private_marker}",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        self.assertEqual(rejected.status_code, 400)
+        self.assertNotIn(private_marker, rejected.text)
+        self.assertNotIn(private_marker, _db_path.read_bytes().decode("latin-1"))
+
+        accepted = self.client.post("/decoy/login")
+        self.assertEqual(accepted.status_code, 200)
+        self.assertIn("never accepts or stores credentials", accepted.text)
+        self.assertIn("X-HoneyProbe-Event-ID", accepted.headers)
+        event = self.client.get(
+            f"/api/events/{accepted.headers['X-HoneyProbe-Event-ID']}"
+        ).json()
+        self.assertEqual(event["event_type"], "login_attempt")
+
     def test_secret_metadata_is_removed_before_storage(self) -> None:
         response = self.client.post(
             "/api/events",

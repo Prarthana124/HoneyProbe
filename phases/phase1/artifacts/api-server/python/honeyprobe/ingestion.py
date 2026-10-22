@@ -25,6 +25,7 @@ from honeyprobe.storage import (
     insert_event,
     iso_utc,
 )
+from honeyprobe.web_decoy import ROUTES as WEB_DECOY_ROUTES
 
 SENSITIVE_KEYS = re.compile(
     r"(password|passwd|token|secret|authorization|cookie|credential|api.?key|private.?key)",
@@ -117,10 +118,20 @@ def record_operator_event(event: EventInput) -> Event:
     )
 
 
-def record_web_interaction(interaction: WebInteractionInput) -> Event:
-    path = interaction.route.split("?", 1)[0]
-    if not path.startswith("/"):
-        path = f"/{path}"
+def record_web_interaction(
+    interaction: WebInteractionInput,
+    *,
+    simulated: bool = True,
+    detection_input: str | None = None,
+) -> Event:
+    request_path = interaction.route.split("?", 1)[0]
+    if not request_path.startswith("/"):
+        request_path = f"/{request_path}"
+    path = request_path if simulated or request_path in WEB_DECOY_ROUTES else "/unmatched"
+    phase2_detections = analyze_phase2_message(
+        detection_input if detection_input is not None else request_path,
+        service="WEB",
+    )
     severity = "info"
     summary = "A synthetic visitor opened a fictional decoy route"
     if interaction.interaction == "login_attempt":
@@ -129,6 +140,19 @@ def record_web_interaction(interaction: WebInteractionInput) -> Event:
     elif interaction.interaction == "protected_route_attempt":
         severity = "high"
         summary = "A synthetic visitor attempted to access a protected decoy route"
+    if not simulated:
+        summary = summary.replace("synthetic visitor", "local visitor")
+        summary = summary.replace("synthetic login attempt", "local login attempt")
+    if phase2_detections:
+        severity_rank = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+        severity = max(
+            [severity, *(item["severity"] for item in phase2_detections)],
+            key=severity_rank.__getitem__,
+        )
+        categories = ", ".join(
+            dict.fromkeys(item["category"] for item in phase2_detections)
+        )
+        summary += f"; Phase 2 rule indicators: {categories[:200]}"
     return _persist(
         {
             "source_type": "web",
@@ -143,10 +167,19 @@ def record_web_interaction(interaction: WebInteractionInput) -> Event:
                 "method": interaction.method.upper()[:10],
                 "username": interaction.username,
                 "login_data_collected": False,
-                "simulated": True,
+                "simulated": simulated,
+                "phase2_analysis": [
+                    {
+                        "category": item["category"],
+                        "severity": item["severity"],
+                        "reason": item["reason"],
+                    }
+                    for item in phase2_detections
+                ],
             },
         },
-        ingestion_source="web_decoy",
+        ingestion_source="web_decoy" if simulated else "local_web_decoy",
+        phase2_findings=phase2_detections,
     )
 
 

@@ -256,6 +256,59 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
             {item["id"] for item in stored_overview["recent_events"]},
         )
 
+    def test_local_decoy_finding_and_evidence_survive_a_real_process_restart(self) -> None:
+        self.start_service()
+        request = urllib.request.Request(
+            f"{self.base_url}/decoy/%2e%2e/%2e%2e/local-check",
+            method="GET",
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=5)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            self.assertEqual(response.status, 404)
+            event_id = response.headers["X-HoneyProbe-Event-ID"]
+
+        status, event = self.request("GET", f"/api/events/{event_id}")
+        self.assertEqual(status, 200)
+        self.assertEqual(event["environment"], "local")
+        self.assertEqual(event["ingestion_source"], "local_web_decoy")
+        self.assertFalse(event["metadata"]["simulated"])
+        self.assertEqual(event["target"], "/unmatched")
+        self.assertTrue(
+            any(
+                item["category"] == "Path Traversal"
+                for item in event["metadata"]["phase2_analysis"]
+            )
+        )
+
+        status, findings = self.request(
+            "GET",
+            f"/api/findings?event_id={event_id}&include_demo=true",
+        )
+        self.assertEqual(status, 200)
+        finding = next(
+            item for item in findings if item["rule_name"] == "Path Traversal"
+        )
+        status, evidence = self.request("GET", f"/api/evidence/{event_id}")
+        self.assertEqual(status, 200)
+        self.assertEqual(finding["event_id"], event_id)
+        self.assertEqual(finding["evidence_id"], evidence["id"])
+        self.assertNotIn("../../local-check", json.dumps(evidence))
+
+        self.stop_service()
+        self.start_service()
+        status, stored_findings = self.request(
+            "GET",
+            f"/api/findings?event_id={event_id}&include_demo=true",
+        )
+        self.assertEqual(status, 200)
+        self.assertIn(finding["id"], {item["id"] for item in stored_findings})
+        status, stored_evidence = self.request("GET", f"/api/evidence/{event_id}")
+        self.assertEqual(status, 200)
+        self.assertEqual(stored_evidence["sha256"], evidence["sha256"])
+
 
 if __name__ == "__main__":
     unittest.main()

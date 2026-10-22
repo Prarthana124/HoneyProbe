@@ -25,13 +25,13 @@ def _phase2_module() -> ModuleType:
     return module
 
 
-def analyze_phase2_message(message: str) -> list[dict[str, str]]:
+def analyze_phase2_message(message: str, *, service: str = "SSH") -> list[dict[str, str]]:
     """Run the Phase 2 rules in memory; never persist the supplied message."""
     phase2 = _phase2_module()
     normalized = phase2.normalize_event(
         {
             "event_type": "observed_event",
-            "service": "SSH",
+            "service": service,
             "payload": message[:500],
         }
     )
