@@ -1,12 +1,14 @@
-cat > .gitignore <<'EOF'
 # Dependencies and build outputs
 node_modules/
 **/node_modules/
 dist/
 build/
 coverage/
+*.tsbuildinfo
 
 # Python
+.pythonlibs/
+**/.pythonlibs/
 __pycache__/
 *.py[cod]
 .venv/
@@ -32,4 +34,3 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
-EOF

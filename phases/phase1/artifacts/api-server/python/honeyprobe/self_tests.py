@@ -5,6 +5,8 @@ from datetime import timezone
 from typing import Callable
 
 from honeyprobe.models import EventInput, SelfTestResult, SelfTestRun
+from honeyprobe.phase2_adapter import analyze_phase2_message
+from honeyprobe.phase3_adapter import run_phase3_dry_run
 from honeyprobe.reports import events_to_csv
 from honeyprobe.storage import (
     db_connection,
@@ -86,7 +88,7 @@ def _ingestion_path_check() -> None:
 
 def run_self_tests() -> SelfTestRun:
     started_at = utc_now()
-    checks: list[tuple[str, Callable[[], None], str]] = [
+    checks: list[tuple[str, Callable[[], str | None], str]] = [
         ("API process", lambda: None, "FastAPI process is responding."),
         ("SQLite read/write", _database_read_write_check, "Transient write/read succeeded and was rolled back."),
         ("Event schema validation", _event_schema_check, "Pydantic accepted a valid common-event payload."),
@@ -106,6 +108,16 @@ def run_self_tests() -> SelfTestRun:
             lambda: _validate_csv_output(),
             "CSV generation returned a header row from stored event data.",
         ),
+        (
+            "Phase 2 detection adapter",
+            _phase2_detection_check,
+            "Phase 2 detection rules passed their controlled fixture.",
+        ),
+        (
+            "Phase 3 dry-run engine",
+            _phase3_dry_run_check,
+            "Phase 3 target checks passed with all changes disabled.",
+        ),
     ]
     results: list[SelfTestResult] = []
     for name, check, success_message in checks:
@@ -113,7 +125,9 @@ def run_self_tests() -> SelfTestRun:
         status = "pass"
         diagnostic = success_message
         try:
-            check()
+            detail = check()
+            if isinstance(detail, str) and detail:
+                diagnostic = detail
         except Exception as error:  # A diagnostic should not expose request data or tracebacks.
             status = "fail"
             diagnostic = f"Check failed: {type(error).__name__}"
@@ -151,6 +165,26 @@ def _validate_csv_output() -> None:
     output = events_to_csv(events)
     if not output.startswith("id,timestamp_utc,"):
         raise RuntimeError("CSV header did not match the event export schema")
+
+
+def _phase2_detection_check() -> str:
+    matches = analyze_phase2_message("synthetic login failed test fixture")
+    if not any(item["category"] == "Brute Force" for item in matches):
+        raise RuntimeError("Phase 2 did not match its expected test fixture")
+    return "Phase 2 detection rules matched a synthetic fixture; no fixture content was stored."
+
+
+def _phase3_dry_run_check() -> str:
+    result = run_phase3_dry_run()
+    if result["total_tests"] == 0 or not result["healthy"]:
+        raise RuntimeError("Phase 3 configured target checks did not pass")
+    if result["applied_actions"] != 0:
+        raise RuntimeError("Phase 3 dry run attempted to apply a change")
+    return (
+        f"Phase 3 checked {result['total_tests']} configured targets: "
+        f"{result['passed']} passed, {result['failed']} failed; "
+        f"{result['previewed_actions']} changes previewed and none applied."
+    )
 
 
 def previous_self_tests() -> list[SelfTestResult]:

@@ -164,6 +164,34 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(first.json()["events"][0]["id"], second.json()["events"][0]["id"])
         self.assertNotIn("should-not-persist", _db_path.read_bytes().decode("latin-1"))
 
+    def test_cowrie_import_reuses_phase2_rules_without_storing_raw_message(self) -> None:
+        private_marker = "phase2-fixture-secret-must-not-persist"
+        response = self.client.post(
+            "/api/imports/cowrie",
+            json={
+                "entries": [
+                    {
+                        "eventid": "cowrie.login.failed",
+                        "src_ip": "198.51.100.45",
+                        "session": "phase2-adapter-session",
+                        "message": (
+                            "login failed; UNION SELECT username,password FROM users; "
+                            f"password={private_marker}"
+                        ),
+                    }
+                ]
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        event = response.json()["events"][0]
+        detections = event["metadata"]["phase2_analysis"]
+        self.assertTrue(any(item["category"] == "SQL Injection" for item in detections))
+        self.assertTrue(any(item["category"] == "Brute Force" for item in detections))
+        self.assertNotIn(private_marker, json.dumps(event))
+        database_text = _db_path.read_bytes().decode("latin-1")
+        self.assertNotIn(private_marker, database_text)
+        self.assertNotIn("UNION SELECT", database_text)
+
     def test_export_and_self_tests_use_real_records(self) -> None:
         csv_response = self.client.get("/api/reports/export")
         self.assertEqual(csv_response.status_code, 200)
@@ -199,8 +227,18 @@ class HoneyProbeApiTests(unittest.TestCase):
 
         test_run = self.client.post("/api/self-tests/run")
         self.assertEqual(test_run.status_code, 200)
-        self.assertEqual(test_run.json()["failed"], 0)
-        self.assertGreaterEqual(test_run.json()["passed"], 6)
+        run_result = test_run.json()
+        self.assertEqual(run_result["failed"], 0)
+        self.assertGreaterEqual(run_result["passed"], 9)
+        self_test_names = {result["name"] for result in run_result["results"]}
+        self.assertIn("Phase 2 detection adapter", self_test_names)
+        self.assertIn("Phase 3 dry-run engine", self_test_names)
+        phase3_result = next(
+            result
+            for result in run_result["results"]
+            if result["name"] == "Phase 3 dry-run engine"
+        )
+        self.assertIn("none applied", phase3_result["diagnostic"])
 
     def test_demo_reset_only_removes_test_events(self) -> None:
         with patch.dict(os.environ, {"HONEYPROBE_ENV": "development"}):

@@ -19,15 +19,11 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 15_000 } },
 });
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
-const clerkPubKey = publishableKeyFromHost(
-  window.location.hostname,
-  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
-);
+const configuredClerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim();
+const clerkPubKey = configuredClerkPubKey
+  ? publishableKeyFromHost(window.location.hostname, configuredClerkPubKey)
+  : undefined;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
-
-if (!clerkPubKey) {
-  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY for HoneyProbe authentication.');
-}
 
 function stripBase(path: string): string {
   return basePath && path.startsWith(basePath)
@@ -242,7 +238,7 @@ function AccessCheck() {
       <main className="flex min-h-[100dvh] items-center justify-center bg-[#080c11] px-5 text-[#f1f5fa]">
         <section className="w-full max-w-md rounded-2xl border border-[#273447] bg-[#101722] p-8 text-center">
           <h1 className="text-lg font-semibold">Access could not be verified</h1>
-          <p className="mt-3 text-sm leading-6 text-[#94a3b8]">The access service is unavailable. No dashboard data has been loaded.</p>
+          <p className="mt-3 text-sm leading-6 text-[#94a3b8]">The access service could not verify this account. Confirm Clerk is configured and that the verified operator account is approved. No dashboard data has been loaded.</p>
           <button type="button" onClick={() => setRetry((value) => value + 1)} className="mt-5 rounded-lg bg-[#f5b544] px-4 py-2.5 text-sm font-semibold text-[#10131a]">Retry</button>
         </section>
       </main>
@@ -293,7 +289,7 @@ function ClerkProviderWithRoutes() {
   const [, setLocation] = useLocation();
   return (
     <ClerkProvider
-      publishableKey={clerkPubKey}
+      publishableKey={clerkPubKey ?? ''}
       proxyUrl={clerkProxyUrl}
       appearance={clerkAppearance}
       signInUrl={`${basePath}/sign-in`}
@@ -331,7 +327,33 @@ function ClerkProviderWithRoutes() {
   );
 }
 
+function AuthSetupRequired() {
+  return (
+    <main className="flex min-h-[100dvh] items-center justify-center bg-[#080c11] px-5 text-[#f1f5fa]">
+      <section className="w-full max-w-xl rounded-2xl border border-[#273447] bg-[#101722] p-8">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#f5b544]/10 text-[#f5b544]">
+          <ShieldCheck size={22} />
+        </div>
+        <p className="eyebrow mt-6">Protected operator console</p>
+        <h1 className="mt-2 text-2xl font-semibold">Authentication setup required</h1>
+        <p className="mt-3 text-sm leading-6 text-[#94a3b8]">
+          This workspace does not have a Clerk publishable key configured. HoneyProbe keeps
+          dashboard data and API routes locked until authentication is ready.
+        </p>
+        <div className="mt-6 rounded-xl border border-[#273447] bg-[#0b1119] p-4">
+          <p className="text-xs font-semibold text-[#e2e8f0]">To enable the operator console</p>
+          <p className="mt-2 text-xs leading-5 text-[#94a3b8]">
+            Configure the project’s Clerk tenant and an approved, verified operator account.
+            This screen does not enable an unauthenticated development bypass.
+          </p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function App() {
+  if (!clerkPubKey) return <AuthSetupRequired />;
   setBaseUrl(import.meta.env.VITE_API_BASE_URL?.trim() || null);
   return (
     <WouterRouter base={basePath}>

@@ -53,14 +53,38 @@ app.use(
   }),
 );
 
-app.use(
-  clerkMiddleware((req) => ({
-    publishableKey: publishableKeyFromHost(
-      getClerkProxyHost(req) ?? "",
-      process.env.CLERK_PUBLISHABLE_KEY,
-    ),
-  })),
+const clerkConfigured = Boolean(
+  process.env.CLERK_SECRET_KEY && process.env.CLERK_PUBLISHABLE_KEY,
 );
+
+if (clerkConfigured) {
+  app.use(
+    clerkMiddleware((req) => ({
+      publishableKey: publishableKeyFromHost(
+        getClerkProxyHost(req) ?? "",
+        process.env.CLERK_PUBLISHABLE_KEY,
+      ),
+    })),
+  );
+} else {
+  logger.warn(
+    "Clerk is not configured; protected API routes will remain locked",
+  );
+  app.use((req, res, next) => {
+    if (
+      !req.path.startsWith("/api") ||
+      req.path === "/api/health" ||
+      req.path === "/api/healthz"
+    ) {
+      next();
+      return;
+    }
+    res.status(503).json({
+      error: "authentication_unavailable",
+      detail: "Clerk is not configured; protected API routes remain locked.",
+    });
+  });
+}
 
 const healthHandler: RequestHandler = async (_req, res) => {
   try {

@@ -18,6 +18,7 @@ from honeyprobe.models import (
     EventInput,
     WebInteractionInput,
 )
+from honeyprobe.phase2_adapter import analyze_phase2_message
 from honeyprobe.storage import db_connection, insert_event, iso_utc
 
 SENSITIVE_KEYS = re.compile(
@@ -202,6 +203,19 @@ def import_cowrie_events(payload: CowrieImportInput) -> list[Event]:
             ]
         )
         fingerprint = hashlib.sha256(fingerprint_material.encode("utf-8")).hexdigest()
+        phase2_detections = analyze_phase2_message(entry.message)
+        severity_rank = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+        if phase2_detections:
+            severity = max(
+                [severity, *(item["severity"] for item in phase2_detections)],
+                key=severity_rank.__getitem__,
+            )
+        summary = f"Cowrie-style event imported: {safe_event_id}"
+        if phase2_detections:
+            categories = ", ".join(
+                dict.fromkeys(item["category"] for item in phase2_detections)
+            )
+            summary += f"; Phase 2 rule indicators: {categories[:200]}"
         imported.append(
             _persist(
                 {
@@ -212,12 +226,20 @@ def import_cowrie_events(payload: CowrieImportInput) -> list[Event]:
                     "target": "ssh://cowrie-adapter",
                     "session_id": entry.session or f"ssh_{uuid.uuid4().hex[:16]}",
                     "timestamp": entry.timestamp,
-                    "summary": f"Cowrie-style event imported: {safe_event_id}",
+                    "summary": summary,
                     # Raw Cowrie messages can contain credentials. Only a bounded event category is stored.
                     "metadata": {
                         "cowrie_eventid": safe_event_id,
                         "message_category": event_type,
                         "raw_message_stored": False,
+                        "phase2_analysis": [
+                            {
+                                "category": item["category"],
+                                "severity": item["severity"],
+                                "reason": item["reason"],
+                            }
+                            for item in phase2_detections
+                        ],
                     },
                 },
                 ingestion_source="cowrie_log_import",
