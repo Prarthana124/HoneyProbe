@@ -126,6 +126,15 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertNotIn("PRIVATE-INPUT", response.text)
 
+    def test_request_body_limit_also_covers_chunked_uploads(self) -> None:
+        response = self.client.post(
+            "/api/events",
+            content=iter((b"x" * (256 * 1024), b"x")),
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["error"], "request_too_large")
+
     def test_synthetic_generation_is_disabled_outside_demo_environment(self) -> None:
         with patch.dict(os.environ, {"HONEYPROBE_ENV": "production"}):
             response = self.client.post("/api/demo/generate", json={"count": 1})
@@ -163,6 +172,13 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(first.status_code, 201)
         self.assertEqual(second.status_code, 201)
         self.assertEqual(first.json()["events"][0]["id"], second.json()["events"][0]["id"])
+        findings = self.client.get(
+            "/api/findings",
+            params={"event_id": first.json()["events"][0]["id"], "include_demo": "true"},
+        )
+        self.assertEqual(findings.status_code, 200)
+        self.assertEqual(len(findings.json()), 1)
+        self.assertEqual(findings.json()[0]["rule_name"], "Brute Force")
         self.assertNotIn("should-not-persist", _db_path.read_bytes().decode("latin-1"))
 
     def test_cowrie_import_reuses_phase2_rules_without_storing_raw_message(self) -> None:
@@ -188,6 +204,23 @@ class HoneyProbeApiTests(unittest.TestCase):
         detections = event["metadata"]["phase2_analysis"]
         self.assertTrue(any(item["category"] == "SQL Injection" for item in detections))
         self.assertTrue(any(item["category"] == "Brute Force" for item in detections))
+        findings_response = self.client.get(
+            "/api/findings",
+            params={"event_id": event["id"], "include_demo": "true"},
+        )
+        self.assertEqual(findings_response.status_code, 200)
+        findings = findings_response.json()
+        self.assertEqual(
+            {finding["rule_name"] for finding in findings},
+            {"SQL Injection", "Brute Force"},
+        )
+        self.assertTrue(all(finding["detector"] == "phase2" for finding in findings))
+        evidence = self.client.get(f"/api/evidence/{event['id']}").json()
+        self.assertEqual(
+            {finding["evidence_id"] for finding in findings},
+            {evidence["id"]},
+        )
+        self.assertTrue(all(finding["event_id"] == event["id"] for finding in findings))
         self.assertNotIn(private_marker, json.dumps(event))
         database_text = _db_path.read_bytes().decode("latin-1")
         self.assertNotIn(private_marker, database_text)

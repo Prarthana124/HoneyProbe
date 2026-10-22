@@ -151,6 +151,16 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
             for finding in cowrie_event["metadata"]["phase2_analysis"]
         }
         self.assertIn("SQL Injection", categories)
+        status, findings = self.request(
+            "GET",
+            f"/api/findings?event_id={cowrie_event['id']}&include_demo=true",
+        )
+        self.assertEqual(status, 200)
+        sql_finding = next(
+            item for item in findings if item["rule_name"] == "SQL Injection"
+        )
+        self.assertEqual(sql_finding["event_id"], cowrie_event["id"])
+        self.assertTrue(sql_finding["evidence_id"].startswith("evidence_"))
 
         status, overview = self.request("GET", "/api/overview?include_demo=false")
         self.assertEqual(status, 200)
@@ -212,6 +222,18 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
                 finding["category"]
                 for finding in stored_cowrie["metadata"]["phase2_analysis"]
             },
+        )
+        status, stored_findings = self.request(
+            "GET",
+            f"/api/findings?event_id={cowrie_event['id']}&include_demo=true",
+        )
+        self.assertEqual(status, 200)
+        self.assertIn(sql_finding["id"], {item["id"] for item in stored_findings})
+        self.assertEqual(
+            sql_finding["evidence_id"],
+            next(item for item in stored_findings if item["id"] == sql_finding["id"])[
+                "evidence_id"
+            ],
         )
 
         status, stored_report = self.request(

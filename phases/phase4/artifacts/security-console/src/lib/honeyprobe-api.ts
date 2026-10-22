@@ -57,6 +57,17 @@ export type EvidenceRecord = {
   event: HoneyProbeEvent;
 };
 
+export type DetectionFinding = {
+  id: string;
+  event_id: string;
+  evidence_id: string;
+  detector: string;
+  rule_name: string;
+  severity: Severity;
+  reason: string;
+  created_at: string;
+};
+
 export type SelfTestResult = {
   name: string;
   status: 'pass' | 'fail' | 'not_run';

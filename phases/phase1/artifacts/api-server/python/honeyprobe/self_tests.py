@@ -10,6 +10,7 @@ from honeyprobe.phase3_adapter import run_phase3_dry_run
 from honeyprobe.reports import events_to_csv
 from honeyprobe.storage import (
     db_connection,
+    insert_detection_findings,
     insert_event,
     iso_utc,
     persist_self_test_results,
@@ -171,7 +172,37 @@ def _phase2_detection_check() -> str:
     matches = analyze_phase2_message("synthetic login failed test fixture")
     if not any(item["category"] == "Brute Force" for item in matches):
         raise RuntimeError("Phase 2 did not match its expected test fixture")
-    return "Phase 2 detection rules matched a synthetic fixture; no fixture content was stored."
+    with db_connection() as connection:
+        connection.execute("SAVEPOINT honeyprobe_finding_self_test")
+        event = insert_event(
+            connection,
+            {
+                "id": "evt_phase2_finding_self_test",
+                "timestamp": iso_utc(),
+                "source_type": "ssh",
+                "event_type": "ssh_test_observation",
+                "severity": "high",
+                "source_address": None,
+                "target": "ssh://self-test",
+                "session_id": "phase2-finding-self-test",
+                "summary": "Transient Phase 2 finding persistence check",
+                "metadata": {},
+                "environment": "test",
+                "ingestion_source": "self_test",
+            },
+        )
+        insert_detection_findings(connection, event, matches)
+        stored = connection.execute(
+            "SELECT event_id, evidence_id FROM detection_findings WHERE event_id = ?",
+            (event.id,),
+        ).fetchall()
+        if not stored or any(
+            item["event_id"] != event.id or not item["evidence_id"] for item in stored
+        ):
+            raise RuntimeError("The Phase 2 finding was not linked to event evidence")
+        connection.execute("ROLLBACK TO honeyprobe_finding_self_test")
+        connection.execute("RELEASE honeyprobe_finding_self_test")
+    return "Phase 2 matched a synthetic fixture and stored a transient finding linked to event evidence; the check was rolled back."
 
 
 def _phase3_dry_run_check() -> str:

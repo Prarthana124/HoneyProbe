@@ -35,6 +35,7 @@ from honeyprobe.models import (
     AdaptiveActionAudit,
     AdaptiveActionInput,
     CowrieImportInput,
+    DetectionFinding,
     DatabaseInteractionInput,
     Decoy,
     DemoGenerationInput,
@@ -70,6 +71,7 @@ from honeyprobe.storage import (
     initialize_database,
     query_evidence,
     query_events,
+    query_findings,
     read_adaptive_action_audit,
     remove_test_events,
     save_generated_report,
@@ -112,22 +114,97 @@ app.add_middleware(
 )
 
 
-@app.middleware("http")
-async def enforce_request_size(request: Request, call_next):
-    content_length = request.headers.get("content-length")
-    if content_length:
-        try:
-            if int(content_length) > 256 * 1024:
-                return JSONResponse(
-                    status_code=413,
-                    content={"error": "request_too_large", "detail": "Request body exceeds 256 KB."},
+class RequestBodyLimitMiddleware:
+    def __init__(self, app, max_body_bytes: int = 256 * 1024) -> None:
+        self.application = app
+        self.max_body_bytes = max_body_bytes
+
+    async def _reject(self, send, *, status: int, error: str, detail: str) -> None:
+        body = json.dumps({"error": error, "detail": detail}).encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode("ascii")),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.application(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
+        if content_length is not None:
+            try:
+                declared_length = int(content_length)
+            except ValueError:
+                await self._reject(
+                    send,
+                    status=400,
+                    error="invalid_content_length",
+                    detail="Invalid Content-Length header.",
                 )
-        except ValueError:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "invalid_content_length", "detail": "Invalid Content-Length header."},
-            )
-    return await call_next(request)
+                return
+            if declared_length < 0:
+                await self._reject(
+                    send,
+                    status=400,
+                    error="invalid_content_length",
+                    detail="Invalid Content-Length header.",
+                )
+                return
+            if declared_length > self.max_body_bytes:
+                await self._reject(
+                    send,
+                    status=413,
+                    error="request_too_large",
+                    detail="Request body exceeds 256 KB.",
+                )
+                return
+
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] != "http.request":
+                continue
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > self.max_body_bytes:
+                await self._reject(
+                    send,
+                    status=413,
+                    error="request_too_large",
+                    detail="Request body exceeds 256 KB.",
+                )
+                return
+            body.extend(chunk)
+            if not message.get("more_body", False):
+                break
+
+        replayed = False
+
+        async def replay_body():
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {
+                    "type": "http.request",
+                    "body": bytes(body),
+                    "more_body": False,
+                }
+            return await receive()
+
+        await self.application(scope, replay_body, send)
+
+
+app.add_middleware(RequestBodyLimitMiddleware)
 
 
 @app.exception_handler(RequestValidationError)
@@ -431,6 +508,21 @@ def event_evidence(event_id: str) -> EvidenceRecord:
     if not records:
         raise HTTPException(status_code=404, detail="Evidence record not found.")
     return records[0]
+
+
+@api.get("/findings", response_model=list[DetectionFinding])
+def list_findings(
+    event_id: str | None = Query(default=None, max_length=128),
+    severity: Literal["info", "low", "medium", "high", "critical"] | None = None,
+    include_demo: bool = False,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[DetectionFinding]:
+    return query_findings(
+        event_id=event_id,
+        severity=severity,
+        include_demo=include_demo,
+        limit=limit,
+    )
 
 
 @api.get("/self-tests", response_model=list[SelfTestResult])

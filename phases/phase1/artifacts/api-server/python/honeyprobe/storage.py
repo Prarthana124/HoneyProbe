@@ -10,7 +10,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from honeyprobe.models import AdaptiveActionAudit, EvidenceRecord, Event, ReportDocument
+from honeyprobe.models import (
+    AdaptiveActionAudit,
+    DetectionFinding,
+    EvidenceRecord,
+    Event,
+    ReportDocument,
+)
 
 
 SCHEMA = """
@@ -65,6 +71,20 @@ CREATE TABLE IF NOT EXISTS evidence_records (
     chain_hash TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_event ON evidence_records(event_id);
+CREATE TABLE IF NOT EXISTS detection_findings (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    evidence_id TEXT NOT NULL REFERENCES evidence_records(id) ON DELETE CASCADE,
+    detector TEXT NOT NULL,
+    rule_name TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK (severity IN ('info', 'low', 'medium', 'high', 'critical')),
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(event_id, detector, rule_name)
+);
+CREATE INDEX IF NOT EXISTS idx_findings_event ON detection_findings(event_id);
+CREATE INDEX IF NOT EXISTS idx_findings_evidence ON detection_findings(evidence_id);
+CREATE INDEX IF NOT EXISTS idx_findings_created ON detection_findings(created_at DESC);
 CREATE TABLE IF NOT EXISTS adaptive_action_audit (
     id TEXT PRIMARY KEY,
     action TEXT NOT NULL CHECK (action IN ('restrict_file_permissions', 'restrict_configuration_file_permissions')),
@@ -195,6 +215,53 @@ def initialize_database() -> None:
         ).fetchall()
         for row in missing_evidence:
             _record_event_evidence(connection, event_from_row(row))
+        _backfill_phase2_findings(connection)
+
+
+def _backfill_phase2_findings(connection: sqlite3.Connection) -> None:
+    rows = connection.execute(
+        """
+        SELECT events.id, events.timestamp, events.metadata_json, evidence_records.id AS evidence_id
+        FROM events
+        JOIN evidence_records ON evidence_records.event_id = events.id
+        WHERE events.metadata_json LIKE '%phase2_analysis%'
+        """
+    ).fetchall()
+    for row in rows:
+        try:
+            analysis = json.loads(row["metadata_json"]).get("phase2_analysis", [])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(analysis, list):
+            continue
+        for item in analysis:
+            if not isinstance(item, dict):
+                continue
+            rule_name = item.get("category")
+            severity = item.get("severity")
+            reason = item.get("reason")
+            if (
+                not isinstance(rule_name, str)
+                or severity not in {"info", "low", "medium", "high", "critical"}
+                or not isinstance(reason, str)
+            ):
+                continue
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO detection_findings(
+                    id, event_id, evidence_id, detector, rule_name, severity, reason, created_at
+                ) VALUES (?, ?, ?, 'phase2', ?, ?, ?, ?)
+                """,
+                (
+                    f"finding_{uuid.uuid4().hex}",
+                    row["id"],
+                    row["evidence_id"],
+                    rule_name[:120],
+                    severity,
+                    reason[:500],
+                    row["timestamp"],
+                ),
+            )
 
 
 def event_from_row(row: sqlite3.Row | dict[str, Any]) -> Event:
@@ -330,6 +397,88 @@ def insert_event(
     persisted_event = event_from_row(row)
     _record_event_evidence(connection, persisted_event)
     return persisted_event
+
+
+def insert_detection_findings(
+    connection: sqlite3.Connection,
+    event: Event,
+    findings: list[dict[str, str]],
+) -> None:
+    evidence = connection.execute(
+        "SELECT id FROM evidence_records WHERE event_id = ?", (event.id,)
+    ).fetchone()
+    if evidence is None:
+        raise RuntimeError("Event evidence must exist before detection findings are stored.")
+    for finding in findings:
+        rule_name = finding.get("category", "").strip()[:120]
+        severity = finding.get("severity")
+        reason = finding.get("reason", "").strip()[:500]
+        if (
+            not rule_name
+            or severity not in {"info", "low", "medium", "high", "critical"}
+            or not reason
+        ):
+            raise ValueError("Phase 2 returned a finding outside the supported contract.")
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO detection_findings(
+                id, event_id, evidence_id, detector, rule_name, severity, reason, created_at
+            ) VALUES (?, ?, ?, 'phase2', ?, ?, ?, ?)
+            """,
+            (
+                f"finding_{uuid.uuid4().hex}",
+                event.id,
+                evidence["id"],
+                rule_name,
+                severity,
+                reason,
+                iso_utc(),
+            ),
+        )
+
+
+def query_findings(
+    *,
+    event_id: str | None = None,
+    severity: str | None = None,
+    include_demo: bool = False,
+    limit: int = 100,
+) -> list[DetectionFinding]:
+    clauses = ["1 = 1"]
+    params: list[Any] = []
+    if event_id:
+        clauses.append("detection_findings.event_id = ?")
+        params.append(event_id)
+    if severity:
+        clauses.append("detection_findings.severity = ?")
+        params.append(severity)
+    if not include_demo:
+        clauses.append("events.environment != 'test'")
+    params.append(min(max(limit, 1), 500))
+    with db_connection() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT detection_findings.* FROM detection_findings
+            JOIN events ON events.id = detection_findings.event_id
+            WHERE {" AND ".join(clauses)}
+            ORDER BY detection_findings.created_at DESC, detection_findings.id
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+    return [
+        DetectionFinding(
+            id=row["id"],
+            event_id=row["event_id"],
+            evidence_id=row["evidence_id"],
+            detector=row["detector"],
+            rule_name=row["rule_name"],
+            severity=row["severity"],
+            reason=row["reason"],
+            created_at=datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00")),
+        )
+        for row in rows
+    ]
 
 
 def query_evidence(

@@ -53,8 +53,8 @@ Other settings:
 
 ## Architecture and data boundaries
 
-- **Phase 1** provides the Express auth gateway, FastAPI endpoints, and canonical SQLite event store. It persists events, evidence snapshots and hash links, reports, and dry-run audit records.
-- **Phase 2** detection rules are reused by the Cowrie import adapter. Raw imported Cowrie messages are analyzed in memory and are not persisted.
+- **Phase 1** provides the Express auth gateway, FastAPI endpoints, and canonical SQLite event store. It persists events, Phase 2 findings, evidence snapshots and hash links, reports, and dry-run audit records.
+- **Phase 2** detection rules are reused by the Cowrie import adapter. Findings are persisted separately and linked to their event and evidence record. Raw imported Cowrie messages are analyzed in memory and are not persisted.
 - **Phase 3** checks run through a read-only adapter that forces `apply_changes=False`; no live adaptive action route is exposed.
 - **Phase 4** reads live overview, event, and reporting endpoints through the same-origin `/api` proxy. Demo fixtures are separate and only shown through **View clearly labeled demo preview**. API errors do not fall back to demo data.
 
@@ -68,7 +68,7 @@ Checks run on **2026-10-22**:
 
 | Check | Command | Result |
 |---|---|---|
-| Phase 1 API and integration tests | `cd phases/phase1/artifacts/api-server && HONEYPROBE_ENV=test PYTHONPATH=python uv run --project ../.. python -m unittest discover -s tests -v` | **PASS** — 11 tests, including a real API process restart and SQLite persistence check |
+| Phase 1 API and integration tests | `cd phases/phase1/artifacts/api-server && HONEYPROBE_ENV=test PYTHONPATH=python uv run --project ../.. python -m unittest discover -s tests -v` | **PASS** — 12 tests, including event → Phase 2 finding → evidence links surviving a real API process restart and chunked request-size enforcement |
 | Phase 2 tests | `cd phases/phase2 && python -m unittest discover -s tests -v` | **PASS** — 4 tests |
 | Phase 3 tests | `cd phases/phase3 && PYTHONPATH=src python -m unittest discover -s tests -v` | **PASS** — 16 tests |
 | Phase 1 workspace typecheck | `cd phases/phase1 && pnpm run typecheck` | **PASS** |
@@ -78,12 +78,12 @@ Checks run on **2026-10-22**:
 
 The integrated workflow also started successfully. Gateway health returned HTTP 200. With Clerk not configured, a protected event request and an adaptive-action request carrying a caller-supplied operator header both returned HTTP 503 `authentication_unavailable`; the internal adaptive-action audit remained empty. The backend integration test separately confirmed an unauthenticated dry-run request returns 403 and creates no audit record.
 
-Security tools were run on the same date:
+Security tools were run against the imported baseline on the same date, before the current findings persistence changes; they were not rerun for this diff:
 
 - Dependency audit: **0 critical, 2 high, 2 moderate** reported instances remain. The high findings are `braces@3.0.3` (the scanner listed no fixed version); the moderate findings are `postcss-selector-parser@6.0.10` (the listed fix is major version 7.1.6). Other fixable findings were addressed in the workspace locks.
 - Static analysis (SAST): **0 findings**.
 - Dataflow/privacy scan (HoundDog): **0 findings**.
 
-The Replit preview was visually checked. It correctly displays **Authentication setup required** and a clearly labeled demo-preview option. Clerk is not configured in this workspace, so a signed-in live dashboard and real Clerk session authorization have **not** been tested. Configure Clerk and the verified operator allowlist before expecting live data in the browser.
+The Replit preview was visually checked after these changes. It correctly displays **Authentication setup required** and a clearly labeled demo-preview option. Clerk is not configured in this workspace; the `/api/findings` route correctly returns HTTP 503 while authentication is unavailable, so the signed-in live dashboard and real Clerk session authorization have **not** been tested. Configure Clerk and the verified operator allowlist before expecting live data in the browser. The findings panel is typechecked and production-built, and its API path is covered by backend persistence tests.
 
-Do not publish this controlled-lab application without a separate network-isolation and access-control review. No deployment or push was performed. No manual `git commit` command was run; at verification time, the local branch was one commit ahead of `origin/main` (`8279f9c`). Confirm the repository state before release.
+Do not publish this controlled-lab application without a separate network-isolation and access-control review. No deployment, push, or manual commit was performed. Current workspace state is branch `main`, aligned with `origin/main`, with the current HoneyProbe changes uncommitted. Confirm the repository state before release.

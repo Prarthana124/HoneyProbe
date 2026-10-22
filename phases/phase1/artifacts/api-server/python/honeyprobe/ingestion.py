@@ -19,7 +19,12 @@ from honeyprobe.models import (
     WebInteractionInput,
 )
 from honeyprobe.phase2_adapter import analyze_phase2_message
-from honeyprobe.storage import db_connection, insert_event, iso_utc
+from honeyprobe.storage import (
+    db_connection,
+    insert_detection_findings,
+    insert_event,
+    iso_utc,
+)
 
 SENSITIVE_KEYS = re.compile(
     r"(password|passwd|token|secret|authorization|cookie|credential|api.?key|private.?key)",
@@ -65,6 +70,7 @@ def _persist(
     ingestion_source: str,
     environment: str | None = None,
     fingerprint: str | None = None,
+    phase2_findings: list[dict[str, str]] | None = None,
 ) -> Event:
     metadata = sanitize_metadata(values.get("metadata", {}))
     if len(json.dumps(metadata, ensure_ascii=False).encode("utf-8")) > MAX_METADATA_BYTES:
@@ -81,7 +87,10 @@ def _persist(
         "ingestion_source": ingestion_source[:100],
     }
     with db_connection() as connection:
-        return insert_event(connection, event, fingerprint=fingerprint)
+        persisted_event = insert_event(connection, event, fingerprint=fingerprint)
+        if phase2_findings:
+            insert_detection_findings(connection, persisted_event, phase2_findings)
+        return persisted_event
 
 
 def record_operator_event(event: EventInput) -> Event:
@@ -245,6 +254,7 @@ def import_cowrie_events(payload: CowrieImportInput) -> list[Event]:
                 },
                 ingestion_source="cowrie_log_import",
                 fingerprint=fingerprint,
+                phase2_findings=phase2_detections,
             )
         )
     return imported

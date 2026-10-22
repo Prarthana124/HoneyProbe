@@ -18,6 +18,7 @@ import {
   honeyProbeRequest,
   isSimulatedEvent,
   type AdaptiveActionAudit,
+  type DetectionFinding,
   type EventPage,
   type HoneyProbeEvent,
   type Overview,
@@ -229,7 +230,13 @@ export function LiveDashboard() {
       honeyProbeRequest<SourceProfile[]>('/api/sources/profiles?include_demo=false&limit=8'),
     refetchInterval: 30_000,
   });
-  const error = overview.error ?? events.error ?? profiles.error;
+  const findings = useQuery({
+    queryKey: ['honeyprobe', 'findings', 'observed'],
+    queryFn: () =>
+      honeyProbeRequest<DetectionFinding[]>('/api/findings?include_demo=false&limit=8'),
+    refetchInterval: 10_000,
+  });
+  const error = overview.error ?? events.error ?? profiles.error ?? findings.error;
   const data = overview.data;
   const highCount =
     (data?.severity_counts.high ?? 0) + (data?.severity_counts.critical ?? 0);
@@ -320,6 +327,40 @@ export function LiveDashboard() {
               </div>
             </Panel>
           </div>
+          <Panel className="mt-5 overflow-hidden">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="text-sm font-semibold">Persisted detection findings</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Phase 2 rules linked to stored events and evidence · demo records excluded
+              </p>
+            </div>
+            {findings.data && findings.data.length > 0 ? (
+              <div className="divide-y divide-border/70">
+                {findings.data.map((finding) => (
+                  <div key={finding.id} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill value={finding.severity.toUpperCase()} />
+                        <span className="text-sm font-medium">{finding.rule_name}</span>
+                        <span className="mono text-[10px] text-muted-foreground">{finding.detector}</span>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">{finding.reason}</p>
+                      <p className="mono mt-2 text-[10px] text-muted-foreground">
+                        Event {finding.event_id} · Evidence {finding.evidence_id}
+                      </p>
+                    </div>
+                    <time className="shrink-0 text-[10px] text-muted-foreground">
+                      {formatShortTime(finding.created_at)}
+                    </time>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-5 text-sm text-muted-foreground">
+                {findings.isLoading ? 'Loading persisted findings…' : 'No Phase 2 findings have been recorded.'}
+              </div>
+            )}
+          </Panel>
         </>
       )}
     </LiveConsoleLayout>

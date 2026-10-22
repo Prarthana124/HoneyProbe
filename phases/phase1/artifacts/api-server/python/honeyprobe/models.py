@@ -200,6 +200,17 @@ class EvidenceRecord(StrictModel):
     event: Event
 
 
+class DetectionFinding(StrictModel):
+    id: str
+    event_id: str
+    evidence_id: str
+    detector: str
+    rule_name: str
+    severity: Literal["info", "low", "medium", "high", "critical"]
+    reason: str
+    created_at: datetime
+
+
 class AdaptiveActionInput(StrictModel):
     action: Literal["restrict_file_permissions", "restrict_configuration_file_permissions"]
     reason: str = Field(min_length=1, max_length=300)
