@@ -134,6 +134,7 @@ def record_web_interaction(interaction: WebInteractionInput) -> Event:
                 "method": interaction.method.upper()[:10],
                 "username": interaction.username,
                 "login_data_collected": False,
+                "simulated": True,
             },
         },
         ingestion_source="web_decoy",

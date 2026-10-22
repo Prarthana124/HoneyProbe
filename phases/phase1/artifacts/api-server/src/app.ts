@@ -1,4 +1,4 @@
-import express, { type RequestHandler } from "express";
+import express, { type Request, type RequestHandler } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
@@ -116,6 +116,15 @@ const apiProxy = createProxyMiddleware({
   changeOrigin: true,
   proxyTimeout: 30_000,
   timeout: 30_000,
+  on: {
+    proxyReq(proxyReq, req) {
+      // Never trust a caller-supplied actor header. The Python API receives
+      // this identity only after the gateway has run requireOperator.
+      proxyReq.removeHeader("x-honeyprobe-operator");
+      const operatorId = getAuth(req as Request).userId;
+      if (operatorId) proxyReq.setHeader("x-honeyprobe-operator", operatorId);
+    },
+  },
 });
 
 app.use((req, res, next): void => {

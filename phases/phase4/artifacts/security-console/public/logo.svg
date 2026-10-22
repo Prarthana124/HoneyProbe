@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="HoneyProbe">
+  <rect width="64" height="64" rx="14" fill="#101722"/>
+  <path d="M32 8 52 16v15c0 13-8.6 22.2-20 26C20.6 53.2 12 44 12 31V16L32 8Z" fill="none" stroke="#64d8ce" stroke-width="4"/>
+  <path d="M23 32h18M32 23v18" stroke="#e4eff3" stroke-linecap="round" stroke-width="4"/>
+</svg>

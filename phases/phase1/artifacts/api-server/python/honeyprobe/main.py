@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 import sqlite3
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -17,6 +20,7 @@ from honeyprobe.analytics import (
     make_analytics,
     make_overview,
     make_report,
+    make_source_profiles,
 )
 from honeyprobe.decoys import decoy_catalog
 from honeyprobe.ingestion import (
@@ -28,6 +32,8 @@ from honeyprobe.ingestion import (
 )
 from honeyprobe.models import (
     Analytics,
+    AdaptiveActionAudit,
+    AdaptiveActionInput,
     CowrieImportInput,
     DatabaseInteractionInput,
     Decoy,
@@ -37,9 +43,12 @@ from honeyprobe.models import (
     Event,
     EventInput,
     EventPage,
+    EvidenceRecord,
     ImportResult,
     Overview,
     ReportSummary,
+    ReportDocument,
+    ReportVerification,
     SelfTestResult,
     SelfTestRun,
     Session,
@@ -47,19 +56,26 @@ from honeyprobe.models import (
     SessionPage,
     SessionStatusInput,
     SystemHealth,
+    SourceProfile,
     WebInteractionInput,
 )
 from honeyprobe.reports import events_to_csv, report_to_html
 from honeyprobe.self_tests import previous_self_tests, run_self_tests
 from honeyprobe.storage import (
     all_events,
+    create_adaptive_action_audit,
     database_health,
+    get_generated_report,
     get_event,
     initialize_database,
+    query_evidence,
     query_events,
+    read_adaptive_action_audit,
     remove_test_events,
+    save_generated_report,
     set_investigation_status,
     utc_now,
+    verify_generated_report,
 )
 
 
@@ -152,12 +168,14 @@ def _report_events(
     until: datetime | None,
     source_type: str | None,
     severity: str | None,
+    include_demo: bool = True,
 ) -> list[Event]:
     return all_events(
         since=since,
         until=until,
         source_type=source_type,
         severity=severity,
+        include_demo=include_demo,
     )
 
 
@@ -170,12 +188,14 @@ def _session_rows(
     until: datetime | None,
     limit: int,
     offset: int,
+    include_demo: bool = True,
 ) -> tuple[list[Session], int]:
     events = all_events(
         since=since,
         until=until,
         source_type=source_type,
         severity=severity,
+        include_demo=include_demo,
     )
     return filter_sessions(
         events,
@@ -212,10 +232,11 @@ def system_health() -> SystemHealth:
 def overview(
     since: datetime | None = None,
     until: datetime | None = None,
+    include_demo: bool = True,
 ) -> Overview:
     end = until or utc_now()
     start = since or (end - timedelta(hours=24))
-    events = all_events(since=start, until=end)
+    events = all_events(since=start, until=end, include_demo=include_demo)
     return make_overview(events, since=start, until=end)
 
 
@@ -229,6 +250,7 @@ def list_events(
     event_type: str | None = Query(default=None, max_length=100),
     since: datetime | None = None,
     until: datetime | None = None,
+    include_demo: bool = True,
     sort_by: Literal["timestamp", "severity", "event_type"] = "timestamp",
     sort_direction: Literal["asc", "desc"] = "desc",
 ) -> EventPage:
@@ -243,6 +265,7 @@ def list_events(
         event_type=event_type,
         since=since,
         until=until,
+        include_demo=include_demo,
         sort_by=sort_by,
         sort_direction=sort_direction,
     )
@@ -257,6 +280,7 @@ def export_filtered_events(
     event_type: str | None = Query(default=None, max_length=100),
     since: datetime | None = None,
     until: datetime | None = None,
+    include_demo: bool = True,
     sort_by: Literal["timestamp", "severity", "event_type"] = "timestamp",
     sort_direction: Literal["asc", "desc"] = "desc",
 ) -> Response:
@@ -270,6 +294,7 @@ def export_filtered_events(
         event_type=event_type,
         since=since,
         until=until,
+        include_demo=include_demo,
         sort_by=sort_by,
         sort_direction=sort_direction,
     )
@@ -302,6 +327,7 @@ def list_sessions(
     source_type: Literal["web", "ssh", "database", "mobile"] | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
+    include_demo: bool = True,
 ) -> SessionPage:
     sessions, total = _session_rows(
         q=q,
@@ -311,6 +337,7 @@ def list_sessions(
         until=until,
         limit=limit,
         offset=offset,
+        include_demo=include_demo,
     )
     return SessionPage(items=sessions, total=total, limit=limit, offset=offset)
 
@@ -366,11 +393,44 @@ def analytics(
     until: datetime | None = None,
     source_type: Literal["web", "ssh", "database", "mobile"] | None = None,
     severity: Literal["info", "low", "medium", "high", "critical"] | None = None,
+    include_demo: bool = True,
 ) -> Analytics:
     if since and until and since > until:
         raise HTTPException(status_code=422, detail="since must be earlier than or equal to until.")
-    events = all_events(since=since, until=until, source_type=source_type, severity=severity)
+    events = all_events(
+        since=since,
+        until=until,
+        source_type=source_type,
+        severity=severity,
+        include_demo=include_demo,
+    )
     return make_analytics(events, since=since, until=until)
+
+
+@api.get("/sources/profiles", response_model=list[SourceProfile])
+def source_profiles(
+    include_demo: bool = False,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[SourceProfile]:
+    events = all_events(limit=10000, include_demo=include_demo)
+    return make_source_profiles(events, limit=limit)
+
+
+@api.get("/evidence", response_model=list[EvidenceRecord])
+def list_evidence(
+    event_id: str | None = Query(default=None, max_length=128),
+    include_demo: bool = False,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[EvidenceRecord]:
+    return query_evidence(event_id=event_id, limit=limit, include_demo=include_demo)
+
+
+@api.get("/evidence/{event_id}", response_model=EvidenceRecord)
+def event_evidence(event_id: str) -> EvidenceRecord:
+    records = query_evidence(event_id=event_id, limit=1)
+    if not records:
+        raise HTTPException(status_code=404, detail="Evidence record not found.")
+    return records[0]
 
 
 @api.get("/self-tests", response_model=list[SelfTestResult])
@@ -389,11 +449,18 @@ def report_summary(
     until: datetime | None = None,
     source_type: Literal["web", "ssh", "database", "mobile"] | None = None,
     severity: Literal["info", "low", "medium", "high", "critical"] | None = None,
+    include_demo: bool = True,
 ) -> ReportSummary:
     if since and until and since > until:
         raise HTTPException(status_code=422, detail="since must be earlier than or equal to until.")
     return make_report(
-        _report_events(since=since, until=until, source_type=source_type, severity=severity),
+        _report_events(
+            since=since,
+            until=until,
+            source_type=source_type,
+            severity=severity,
+            include_demo=include_demo,
+        ),
         since=since,
         until=until,
     )
@@ -405,11 +472,18 @@ def report_export(
     until: datetime | None = None,
     source_type: Literal["web", "ssh", "database", "mobile"] | None = None,
     severity: Literal["info", "low", "medium", "high", "critical"] | None = None,
+    include_demo: bool = True,
 ) -> Response:
     if since and until and since > until:
         raise HTTPException(status_code=422, detail="since must be earlier than or equal to until.")
     report = make_report(
-        _report_events(since=since, until=until, source_type=source_type, severity=severity),
+        _report_events(
+            since=since,
+            until=until,
+            source_type=source_type,
+            severity=severity,
+            include_demo=include_demo,
+        ),
         since=since,
         until=until,
     )
@@ -426,15 +500,137 @@ def report_html(
     until: datetime | None = None,
     source_type: Literal["web", "ssh", "database", "mobile"] | None = None,
     severity: Literal["info", "low", "medium", "high", "critical"] | None = None,
+    include_demo: bool = True,
 ) -> HTMLResponse:
     if since and until and since > until:
         raise HTTPException(status_code=422, detail="since must be earlier than or equal to until.")
     report = make_report(
-        _report_events(since=since, until=until, source_type=source_type, severity=severity),
+        _report_events(
+            since=since,
+            until=until,
+            source_type=source_type,
+            severity=severity,
+            include_demo=include_demo,
+        ),
         since=since,
         until=until,
     )
     return HTMLResponse(content=report_to_html(report))
+
+
+@api.post("/reports/generate", response_model=ReportDocument, status_code=201)
+def generate_persisted_report() -> ReportDocument:
+    generated_at = utc_now()
+    events = all_events(limit=10000, include_demo=False)
+    summary = make_report(events, since=None, until=generated_at)
+    event_ids = {event.id for event in events}
+    evidence = [
+        record
+        for record in query_evidence(limit=10000, include_demo=False)
+        if record.event_id in event_ids
+    ]
+    report_id = f"report_{uuid.uuid4().hex}"
+    unsigned_document = {
+        "id": report_id,
+        "generated_at": generated_at.isoformat(),
+        "summary": summary.model_dump(mode="json"),
+        "events": [event.model_dump(mode="json") for event in events],
+        "evidence": [record.model_dump(mode="json") for record in evidence],
+    }
+    canonical_document = json.dumps(
+        unsigned_document,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    digest = hashlib.sha256(canonical_document.encode("utf-8")).hexdigest()
+    document = ReportDocument(**unsigned_document, sha256=digest)
+    save_generated_report(document)
+    return document
+
+
+@api.get("/reports/latest", response_model=ReportDocument)
+def latest_report() -> ReportDocument:
+    report = get_generated_report()
+    if report is None:
+        raise HTTPException(status_code=404, detail="No report has been generated yet.")
+    return report
+
+
+@api.get("/reports/verify", response_model=ReportVerification)
+def verify_report(
+    sha256: str = Query(min_length=64, max_length=64, pattern=r"^[0-9a-fA-F]{64}$"),
+) -> ReportVerification:
+    report = verify_generated_report(sha256)
+    return ReportVerification(
+        valid=report is not None,
+        report_id=report.id if report else None,
+        checked_at=utc_now(),
+        detail=(
+            "Stored report hash and content match."
+            if report
+            else "No stored report matched this SHA-256 digest."
+        ),
+    )
+
+
+@api.get("/reports/{report_id}", response_model=ReportDocument)
+def get_report(report_id: str) -> ReportDocument:
+    report = get_generated_report(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    return report
+
+
+@api.get("/adaptive-actions/audit", response_model=list[AdaptiveActionAudit])
+def adaptive_action_audit(
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[AdaptiveActionAudit]:
+    return read_adaptive_action_audit(limit)
+
+
+@api.post(
+    "/adaptive-actions/dry-run",
+    response_model=AdaptiveActionAudit,
+    status_code=201,
+)
+def adaptive_action_dry_run(
+    payload: AdaptiveActionInput,
+    request: Request,
+) -> AdaptiveActionAudit:
+    actor_id = request.headers.get("x-honeyprobe-operator", "").strip()
+    if not actor_id:
+        raise HTTPException(status_code=403, detail="A verified operator identity is required.")
+
+    from honeyprobe.phase3_adapter import run_phase3_dry_run
+
+    try:
+        preview = run_phase3_dry_run()
+        result = (
+            "blocked"
+            if preview["blocked_actions"] or not preview["healthy"]
+            else "previewed"
+        )
+    except Exception as error:
+        create_adaptive_action_audit(
+            action=payload.action,
+            actor_id=actor_id,
+            reason=payload.reason,
+            result="failed",
+            preview={"error": type(error).__name__, "applied_actions": 0},
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="The dry-run preview failed and was recorded in the audit log.",
+        ) from error
+
+    return create_adaptive_action_audit(
+        action=payload.action,
+        actor_id=actor_id,
+        reason=payload.reason,
+        result=result,
+        preview=preview,
+    )
 
 
 def _demo_generation_enabled() -> bool:

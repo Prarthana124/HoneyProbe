@@ -178,6 +178,45 @@ class Analytics(StrictModel):
     top_routes: list[dict[str, Any]]
 
 
+class SourceProfile(StrictModel):
+    source_address: str
+    event_count: int
+    session_count: int
+    first_seen: datetime
+    last_seen: datetime
+    highest_severity: Literal["info", "low", "medium", "high", "critical"]
+    category_counts: dict[str, int]
+    includes_demo_data: bool
+    simulated_events: int
+
+
+class EvidenceRecord(StrictModel):
+    id: str
+    event_id: str
+    captured_at: datetime
+    sha256: str
+    previous_hash: str | None = None
+    chain_hash: str
+    event: Event
+
+
+class AdaptiveActionInput(StrictModel):
+    action: Literal["restrict_file_permissions", "restrict_configuration_file_permissions"]
+    reason: str = Field(min_length=1, max_length=300)
+
+
+class AdaptiveActionAudit(StrictModel):
+    id: str
+    action: Literal["restrict_file_permissions", "restrict_configuration_file_permissions"]
+    actor_id: str
+    requested_at: datetime
+    mode: Literal["dry_run"] = "dry_run"
+    applied: Literal[False] = False
+    result: Literal["previewed", "blocked", "failed"]
+    reason: str
+    preview: dict[str, Any]
+
+
 class SelfTestResult(StrictModel):
     name: str
     status: Literal["pass", "fail", "not_run"]
@@ -211,3 +250,19 @@ class ReportSummary(StrictModel):
     source_counts: dict[str, int]
     active_sessions: list[Session]
     events: list[Event]
+
+
+class ReportDocument(StrictModel):
+    id: str
+    generated_at: datetime
+    sha256: str
+    summary: ReportSummary
+    events: list[Event]
+    evidence: list[EvidenceRecord]
+
+
+class ReportVerification(StrictModel):
+    valid: bool
+    report_id: str | None = None
+    checked_at: datetime
+    detail: str

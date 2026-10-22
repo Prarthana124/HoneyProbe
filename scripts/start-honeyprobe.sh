@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PHASE1_DIR="$ROOT_DIR/phases/phase1"
+PHASE4_DIR="$ROOT_DIR/phases/phase4"
 API_PID=""
 WEB_PID=""
 
@@ -24,11 +25,17 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if [[ ! -x "$PHASE1_DIR/node_modules/.bin/vite" ]]; then
-  echo "Installing the locked Phase 1 JavaScript workspace dependencies..."
+  echo "Installing the locked Phase 1 backend JavaScript dependencies..."
   (cd "$PHASE1_DIR" && pnpm install --frozen-lockfile)
 fi
 
-if [[ ! -x "$ROOT_DIR/.pythonlibs/bin/python" ]]; then
+if [[ ! -x "$PHASE4_DIR/node_modules/.bin/vite" ]]; then
+  echo "Installing the locked Phase 4 console dependencies..."
+  (cd "$PHASE4_DIR" && pnpm install --frozen-lockfile)
+fi
+
+if [[ ! -x "$ROOT_DIR/.pythonlibs/bin/python" ]] || \
+  ! "$ROOT_DIR/.pythonlibs/bin/python" -c 'import fastapi, httpx, uvicorn' >/dev/null 2>&1; then
   echo "Installing the locked Phase 1 Python dependencies..."
   uv sync --locked --project "$PHASE1_DIR"
 fi
@@ -59,13 +66,13 @@ if [[ "$ready" != true ]]; then
 fi
 
 (
-  cd "$PHASE1_DIR"
+  cd "$PHASE4_DIR"
   export PORT=5000
   export BASE_PATH=/
-  exec pnpm --filter @workspace/honeyprobe run dev
+  exec pnpm --filter @workspace/security-console run dev
 ) &
 WEB_PID=$!
 
-echo "HoneyProbe operator interface: port 5000"
-echo "API gateway: port 8080; FastAPI remains bound to loopback on port 8180."
+echo "HoneyProbe Security Operations Console: port 5000"
+echo "Protected API gateway: internal port 8080; FastAPI remains bound to 127.0.0.1:8180."
 wait -n "$API_PID" "$WEB_PID"

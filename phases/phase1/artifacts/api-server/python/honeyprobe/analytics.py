@@ -13,6 +13,7 @@ from honeyprobe.models import (
     Overview,
     ReportSummary,
     Session,
+    SourceProfile,
 )
 from honeyprobe.storage import get_investigation_status, utc_now
 
@@ -50,6 +51,51 @@ def count_by(values: list[str], defaults: tuple[str, ...] = ()) -> dict[str, int
     for key in defaults:
         counts.setdefault(key, 0)
     return dict(sorted(counts.items()))
+
+
+def make_source_profiles(events: list[Event], *, limit: int = 100) -> list[SourceProfile]:
+    grouped: dict[str, list[Event]] = defaultdict(list)
+    for event in events:
+        if event.source_address:
+            grouped[event.source_address].append(event)
+
+    profiles: list[SourceProfile] = []
+    for address, source_events in grouped.items():
+        categories: Counter[str] = Counter()
+        for event in source_events:
+            categories[event.event_type] += 1
+            detections = event.metadata.get("phase2_analysis", [])
+            if isinstance(detections, list):
+                for detection in detections:
+                    if isinstance(detection, dict) and isinstance(detection.get("category"), str):
+                        categories[detection["category"]] += 1
+        timestamps = [event.timestamp for event in source_events]
+        highest = max(
+            source_events,
+            key=lambda event: SEVERITY_ORDER[event.severity],
+        ).severity
+        profiles.append(
+            SourceProfile(
+                source_address=address,
+                event_count=len(source_events),
+                session_count=len(
+                    {event.session_id for event in source_events if event.session_id}
+                ),
+                first_seen=min(timestamps),
+                last_seen=max(timestamps),
+                highest_severity=highest,
+                category_counts=dict(sorted(categories.items())),
+                includes_demo_data=any(event.environment == "test" for event in source_events),
+                simulated_events=sum(
+                    event.environment == "test"
+                    or bool(event.metadata.get("simulated"))
+                    or bool(event.metadata.get("demo"))
+                    for event in source_events
+                ),
+            )
+        )
+    profiles.sort(key=lambda profile: (profile.event_count, profile.last_seen), reverse=True)
+    return profiles[: min(max(limit, 1), 500)]
 
 
 def make_activity_buckets(

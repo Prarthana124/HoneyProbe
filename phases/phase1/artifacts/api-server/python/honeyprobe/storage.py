@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -9,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from honeyprobe.models import Event
+from honeyprobe.models import AdaptiveActionAudit, EvidenceRecord, Event, ReportDocument
 
 
 SCHEMA = """
@@ -54,6 +55,35 @@ CREATE TABLE IF NOT EXISTS app_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS evidence_records (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,
+    captured_at TEXT NOT NULL,
+    event_json TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    previous_hash TEXT,
+    chain_hash TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_event ON evidence_records(event_id);
+CREATE TABLE IF NOT EXISTS adaptive_action_audit (
+    id TEXT PRIMARY KEY,
+    action TEXT NOT NULL CHECK (action IN ('restrict_file_permissions', 'restrict_configuration_file_permissions')),
+    actor_id TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    mode TEXT NOT NULL CHECK (mode = 'dry_run'),
+    applied INTEGER NOT NULL CHECK (applied = 0),
+    result TEXT NOT NULL CHECK (result IN ('previewed', 'blocked', 'failed')),
+    reason TEXT NOT NULL,
+    preview_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_adaptive_action_requested ON adaptive_action_audit(requested_at DESC);
+CREATE TABLE IF NOT EXISTS generated_reports (
+    id TEXT PRIMARY KEY,
+    generated_at TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    document_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_generated_reports_time ON generated_reports(generated_at DESC);
 """
 
 DEMO_SEED = [
@@ -155,6 +185,16 @@ def initialize_database() -> None:
             connection.execute(
                 "INSERT INTO app_meta(key, value) VALUES('first_run_seeded', 'true')"
             )
+        missing_evidence = connection.execute(
+            """
+            SELECT events.* FROM events
+            LEFT JOIN evidence_records ON evidence_records.event_id = events.id
+            WHERE evidence_records.event_id IS NULL
+            ORDER BY events.timestamp, events.rowid
+            """
+        ).fetchall()
+        for row in missing_evidence:
+            _record_event_evidence(connection, event_from_row(row))
 
 
 def event_from_row(row: sqlite3.Row | dict[str, Any]) -> Event:
@@ -174,6 +214,63 @@ def event_from_row(row: sqlite3.Row | dict[str, Any]) -> Event:
         environment=row["environment"],
         ingestion_source=row["ingestion_source"],
         processing_status="accepted",
+    )
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _record_event_evidence(connection: sqlite3.Connection, event: Event) -> EvidenceRecord:
+    existing = connection.execute(
+        "SELECT * FROM evidence_records WHERE event_id = ?", (event.id,)
+    ).fetchone()
+    if existing is not None:
+        return evidence_from_row(existing)
+
+    event_json = _canonical_json(event.model_dump(mode="json"))
+    digest = hashlib.sha256(event_json.encode("utf-8")).hexdigest()
+    previous = connection.execute(
+        "SELECT chain_hash FROM evidence_records ORDER BY rowid DESC LIMIT 1"
+    ).fetchone()
+    previous_hash = previous["chain_hash"] if previous else None
+    chain_material = f"{previous_hash or ''}\n{digest}".encode("utf-8")
+    chain_hash = hashlib.sha256(chain_material).hexdigest()
+    evidence_id = f"evidence_{uuid.uuid4().hex}"
+    captured_at = iso_utc()
+    connection.execute(
+        """
+        INSERT INTO evidence_records(
+            id, event_id, captured_at, event_json, sha256, previous_hash, chain_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (evidence_id, event.id, captured_at, event_json, digest, previous_hash, chain_hash),
+    )
+    return EvidenceRecord(
+        id=evidence_id,
+        event_id=event.id,
+        captured_at=datetime.fromisoformat(captured_at.replace("Z", "+00:00")),
+        sha256=digest,
+        previous_hash=previous_hash,
+        chain_hash=chain_hash,
+        event=event,
+    )
+
+
+def evidence_from_row(row: sqlite3.Row | dict[str, Any]) -> EvidenceRecord:
+    return EvidenceRecord(
+        id=row["id"],
+        event_id=row["event_id"],
+        captured_at=datetime.fromisoformat(str(row["captured_at"]).replace("Z", "+00:00")),
+        sha256=row["sha256"],
+        previous_hash=row["previous_hash"],
+        chain_hash=row["chain_hash"],
+        event=Event.model_validate(json.loads(row["event_json"])),
     )
 
 
@@ -230,7 +327,146 @@ def insert_event(
     row = connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
     if row is None:
         raise RuntimeError("Inserted event could not be read back")
-    return event_from_row(row)
+    persisted_event = event_from_row(row)
+    _record_event_evidence(connection, persisted_event)
+    return persisted_event
+
+
+def query_evidence(
+    *,
+    event_id: str | None = None,
+    limit: int = 100,
+    include_demo: bool = True,
+) -> list[EvidenceRecord]:
+    clauses = ["1 = 1"]
+    params: list[Any] = []
+    if event_id:
+        clauses.append("events.id = ?")
+        params.append(event_id)
+    if not include_demo:
+        clauses.append("events.environment != 'test'")
+    params.append(min(max(limit, 1), 500))
+    with db_connection() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT evidence_records.* FROM evidence_records
+            JOIN events ON events.id = evidence_records.event_id
+            WHERE {" AND ".join(clauses)}
+            ORDER BY evidence_records.rowid DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+    return [evidence_from_row(row) for row in rows]
+
+
+def create_adaptive_action_audit(
+    *,
+    action: str,
+    actor_id: str,
+    reason: str,
+    result: str,
+    preview: dict[str, Any],
+) -> AdaptiveActionAudit:
+    audit = AdaptiveActionAudit(
+        id=f"action_{uuid.uuid4().hex}",
+        action=action,
+        actor_id=actor_id[:128],
+        requested_at=utc_now(),
+        mode="dry_run",
+        applied=False,
+        result=result,
+        reason=reason,
+        preview=preview,
+    )
+    with db_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO adaptive_action_audit(
+                id, action, actor_id, requested_at, mode, applied, result, reason, preview_json
+            ) VALUES (?, ?, ?, ?, 'dry_run', 0, ?, ?, ?)
+            """,
+            (
+                audit.id,
+                audit.action,
+                audit.actor_id,
+                iso_utc(audit.requested_at),
+                audit.result,
+                audit.reason,
+                _canonical_json(audit.preview),
+            ),
+        )
+    return audit
+
+
+def read_adaptive_action_audit(limit: int = 100) -> list[AdaptiveActionAudit]:
+    with db_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM adaptive_action_audit
+            ORDER BY requested_at DESC, rowid DESC
+            LIMIT ?
+            """,
+            (min(max(limit, 1), 10000),),
+        ).fetchall()
+    return [
+        AdaptiveActionAudit(
+            id=row["id"],
+            action=row["action"],
+            actor_id=row["actor_id"],
+            requested_at=datetime.fromisoformat(row["requested_at"].replace("Z", "+00:00")),
+            mode=row["mode"],
+            applied=bool(row["applied"]),
+            result=row["result"],
+            reason=row["reason"],
+            preview=json.loads(row["preview_json"]),
+        )
+        for row in rows
+    ]
+
+
+def save_generated_report(document: ReportDocument) -> None:
+    document_json = _canonical_json(document.model_dump(mode="json"))
+    with db_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO generated_reports(id, generated_at, sha256, document_json)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                document.id,
+                iso_utc(document.generated_at),
+                document.sha256,
+                document_json,
+            ),
+        )
+
+
+def get_generated_report(report_id: str | None = None) -> ReportDocument | None:
+    with db_connection() as connection:
+        if report_id:
+            row = connection.execute(
+                "SELECT document_json FROM generated_reports WHERE id = ?", (report_id,)
+            ).fetchone()
+        else:
+            row = connection.execute(
+                "SELECT document_json FROM generated_reports ORDER BY generated_at DESC, rowid DESC LIMIT 1"
+            ).fetchone()
+    return ReportDocument.model_validate(json.loads(row["document_json"])) if row else None
+
+
+def verify_generated_report(digest: str) -> ReportDocument | None:
+    with db_connection() as connection:
+        row = connection.execute(
+            "SELECT document_json FROM generated_reports WHERE sha256 = ? ORDER BY rowid DESC LIMIT 1",
+            (digest.lower(),),
+        ).fetchone()
+    if row is None:
+        return None
+    document = ReportDocument.model_validate(json.loads(row["document_json"]))
+    unsigned = document.model_dump(mode="json", exclude={"sha256"})
+    actual = hashlib.sha256(_canonical_json(unsigned).encode("utf-8")).hexdigest()
+    return document if actual == document.sha256 == digest.lower() else None
 
 
 def _where_clause(
@@ -241,6 +477,7 @@ def _where_clause(
     event_type: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
+    include_demo: bool = True,
 ) -> tuple[str, list[Any]]:
     clauses = ["1 = 1"]
     params: list[Any] = []
@@ -268,6 +505,8 @@ def _where_clause(
     if until:
         clauses.append("timestamp <= ?")
         params.append(iso_utc(until))
+    if not include_demo:
+        clauses.append("environment != 'test'")
     return " AND ".join(clauses), params
 
 
@@ -284,6 +523,7 @@ def query_events(
     sort_by: str = "timestamp",
     sort_direction: str = "desc",
     connection: sqlite3.Connection | None = None,
+    include_demo: bool = True,
 ) -> tuple[list[Event], int]:
     where, params = _where_clause(
         query=query,
@@ -292,6 +532,7 @@ def query_events(
         event_type=event_type,
         since=since,
         until=until,
+        include_demo=include_demo,
     )
     columns = {
         "timestamp": "timestamp",
@@ -334,6 +575,7 @@ def all_events(
     since: datetime | None = None,
     until: datetime | None = None,
     limit: int = 10000,
+    include_demo: bool = True,
 ) -> list[Event]:
     events, _ = query_events(
         limit=min(max(limit, 1), 10000),
@@ -342,6 +584,7 @@ def all_events(
         severity=severity,
         since=since,
         until=until,
+        include_demo=include_demo,
     )
     return events
 

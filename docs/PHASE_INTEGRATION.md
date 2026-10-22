@@ -1,45 +1,104 @@
 # HoneyProbe phase integration
 
-## Integration map
+## Four-phase inventory
 
-| Phase | Existing functionality | Reused components | Integration method | Verification |
-|---|---|---|---|---|
-| 1 | React/TypeScript operator console; Express/Clerk gateway; FastAPI API; SQLite events, sessions, analytics, decoy simulations, self-tests, and CSV/HTML reports | `phases/phase1/artifacts/honeyprobe/`, `phases/phase1/artifacts/api-server/`, `phases/phase1/lib/api-spec/` | Canonical application and data store. The root launcher starts the API gateway and Vite UI together; Vite proxies `/api` to the gateway. | Phase 1 API tests plus TypeScript typecheck/build. |
-| 2 | Standard-library event normalization, rule-based detection, behaviour summaries, fingerprint indicators, standalone dashboard, and Cowrie parser | `phases/phase2/app.py`, especially `normalize_event` and `detect_event` | `phase1/.../honeyprobe/phase2_adapter.py` loads the original pure functions. Cowrie imports run detections in memory and persist only bounded rule names, severities, and generic reasons with the common Phase 1 event. The standalone Phase 2 HTTP server/database is not started by the integrated app. | Phase 2 tests; Phase 1 Cowrie-import test checks SQL/auth indicators and confirms raw message text is absent from the response and SQLite file. |
-| 3 | Self-test coordinator, file-permission tests, policy-gated hardening controls, and retesting | `phases/phase3/src/honeyprobe_module3/`, `phases/phase3/config.example.toml` | `phase1/.../honeyprobe/phase3_adapter.py` runs its configured sample-target checks as part of the Phase 1 self-test endpoint. The adapter forcibly sets `apply_changes=False`; any reported applied action fails the check. Summary results are persisted in Phase 1's self-test table. | Phase 3's original unit tests; Phase 1 API test verifies the integrated dry-run result and that no action was applied. |
-| 4 | React security-console visual prototype with dashboard, incidents, adaptation, reports, and verification screens | `phases/phase4/artifacts/security-console/` and `src/data/demo-data.ts` | Not merged into the live routes: its incident/adaptation records and several health claims are hardcoded demo data with no operational API connection. The Phase 1 console already has API-backed overview, telemetry, sessions, decoy state, self-tests, and reports. Phase 4 files remain preserved for future redesign work. | Source inspection confirms this console reads the static demo-data module rather than the common event API. |
+| Phase | Entry points and APIs | Dependencies and persistence | Existing tests |
+|---|---|---|---|
+| **1 — operator platform** | React UI: `phases/phase1/artifacts/honeyprobe/src/App.tsx`; Express/Clerk gateway: `phases/phase1/artifacts/api-server/src/index.ts`; FastAPI: `phases/phase1/artifacts/api-server/python/honeyprobe/main.py`. Main API includes health, overview, event ingestion/search/export, sessions, decoys, Cowrie import, analytics, self-tests, reports, evidence, source profiles, and dry-run action audit. | pnpm/TypeScript React + Express and Python 3.13 FastAPI/Pydantic/httpx/uvicorn. Python `sqlite3` is the canonical persisted store, default `phases/phase1/artifacts/api-server/data/honeyprobe.sqlite3`; override with `HONEYPROBE_DB_PATH`. The workspace's Drizzle scaffold is not the active event database. | `phases/phase1/artifacts/api-server/tests/test_honeyprobe.py` (unittest + FastAPI TestClient). |
+| **2 — detection and profiling rules** | Standalone standard-library server/CLI: `phases/phase2/app.py`; server routes `/api/health`, `/api/dashboard`, `/api/events` (POST), and `/api/demo` (POST). Pure functions `normalize_event` and `detect_event` are reused by the Phase 1 Cowrie adapter. | Python standard library only. The standalone server writes its own SQLite file (`HONEYPROBE_DB`, default `phases/phase2/data/honeyprobe.db`); that server/database is intentionally not started by the integrated app. | `phases/phase2/tests/test_phase2.py` (unittest). |
+| **3 — self-tests and adaptive-hardening policy** | Package CLI `honeyprobe-module3 --config <file>` from `phases/phase3/src/honeyprobe_module3/cli.py`; the Phase 1 adapter is `phases/phase1/artifacts/api-server/python/honeyprobe/phase3_adapter.py`. This phase has no HTTP API or database. | Python 3.11+, standard-library runtime; setuptools is its build backend. TOML policy config selects file permission checks. Integrated results are saved by the Phase 1 API in its SQLite store. The adapter forces `apply_changes=False`. | `phases/phase3/tests/test_config.py`, `test_configuration_permissions.py`, and `test_engine.py` (unittest). |
+| **4 — Security Operations Console** | Vite/React entry: `phases/phase4/artifacts/security-console/src/main.tsx`; routes in `src/App.tsx`; live views in `src/pages/live-security-pages.tsx`. Same-origin `/api` requests are proxied to the Phase 1 gateway on internal port 8080. `src/data/demo-data.ts` remains the source for the explicit demo preview only. | React/TypeScript, Vite, Tailwind, Clerk browser SDK. The Phase 4 Express artifact server is only an unused health-check scaffold; it is not started, has no event database, and is not the console's API. | No Phase 4 frontend test suite was present in the imported project. Typechecking and production build are the available frontend checks. |
 
-## Runtime and data flow
+## Shared runtime and data flow
 
 ```text
-Browser on port 5000
-  └─ Vite /api proxy → Express + Clerk gateway on port 8080
-                         ├─ public shallow health checks
-                         └─ verified, allowlisted operator → FastAPI on 127.0.0.1:8180
-                              ├─ web/database simulated interactions
-                              ├─ bounded Cowrie import → Phase 2 rules in memory
-                              ├─ common event/session/analytics queries
-                              ├─ self-test endpoint → Phase 1 checks + Phase 3 dry-run
-                              └─ CSV and printable HTML report generation
-                                    ↓
-                              Phase 1 SQLite event store
+Browser / Replit preview (port 5000)
+  └─ Phase 4 Vite /api proxy
+      └─ Phase 1 Express + Clerk gateway (internal port 8080)
+          ├─ public shallow health checks only
+          ├─ authenticated, verified-allowlisted operator routes
+          └─ FastAPI on 127.0.0.1:8180
+              ├─ common Pydantic event contract and Phase 1 SQLite store
+              ├─ Phase 2 detection rules through the Cowrie import adapter
+              ├─ Phase 3 self-test / dry-run adapter
+              ├─ derived source profiles and per-event evidence hashes
+              ├─ persisted JSON reports and CSV/HTML exports
+              └─ adaptive-action preview audit records (no changes applied)
 ```
 
-Relevant API routes include `/api/health`, `/api/overview`, `/api/events`, `/api/sessions`, `/api/decoys`, `/api/decoys/web/interaction`, `/api/decoys/database/interaction`, `/api/imports/cowrie`, `/api/self-tests`, `/api/self-tests/run`, and `/api/reports/*`. The Express gateway requires Clerk authentication and the configured verified-email allowlist for data routes; FastAPI stays bound to loopback.
+The event contract is defined in `phases/phase1/artifacts/api-server/python/honeyprobe/models.py`. Phase 2 detections are normalized into bounded event metadata; raw imported Cowrie messages are analyzed in memory and are not stored. Phase 3 checks return summary results only. Phase 4 uses matching TypeScript API types in `phases/phase4/artifacts/security-console/src/lib/honeyprobe-api.ts`.
 
-Cowrie import input is bounded and validated. Phase 2 analyzes each message only in memory. Persisted metadata contains detection categories, severity, and generic reasons, not raw commands, payloads, credentials, or request strings. Events, sessions, self-test summaries, and reports use Phase 1's SQLite store; Phase 2's separate SQLite database is not part of the live data path.
+SQLite schema additions are additive. Event insertion and its evidence snapshot/hash are committed together; startup backfills evidence for pre-existing events without deleting or replacing them. Generated reports and adaptive-action audits are also persisted in the same database.
 
-## Run and verification
+The Phase 4 default API requests explicitly exclude records whose environment is `test`. Simulated decoy records in other environments are labeled per event. The static Phase 4 fixture screens can only be opened through the explicit **View demo preview** switch; API errors display an error and never substitute demo records.
 
-- One command: `bash scripts/start-honeyprobe.sh` from the workspace root, or start the Replit **Project** workflow.
-- Phase 1 dependencies: Node.js 24 + pnpm workspace, Python 3.13 + uv.
-- Phase 2 and Phase 3 tests use Python's standard library; no third-party dependencies are needed for those suites.
-- The application is designed for a local or isolated research workspace. Do not publish decoy routes as public honeypots without separate network-isolation and access-control review.
+## Authorization and adaptive-action boundary
 
-## Current limits
+The Express gateway applies `requireOperator` to all non-health API routes. That middleware requires a Clerk session and a verified email in `HONEYPROBE_ALLOWED_EMAILS`. For API forwarding it overwrites the internal `x-honeyprobe-operator` header with the authenticated Clerk user ID, so a caller cannot choose the audit actor by supplying their own header.
 
-- This workspace has no Clerk tenant configured. The frontend now presents an explicit setup-required screen; protected data APIs remain fail-closed. Configure Clerk and the approved verified operator list before using the dashboard.
-- The web and database decoys are simulations. Cowrie is imported from logs; no SSH service is launched. Mobile/Android telemetry is unavailable.
-- No external threat-intelligence feed or URL enrichment is connected. No case-management system, evidence-chain store, PDF report generator, or measured deception score is implemented.
-- Phase 3 is limited to the sample-target permission checks and is always dry-run through the integrated API. No automated production configuration changes are made.
-- Phase 4 remains an isolated visual prototype because its hardcoded data must not be presented as real observations.
+`POST /api/adaptive-actions/dry-run` rejects requests without the gateway-provided operator identity, invokes the Phase 3 adapter, and stores a `dry_run` audit row with `applied=false`. The Phase 3 adapter always forces changes off and fails if the engine reports an applied change. There is no live-apply route in this integration.
+
+Evidence uses a canonical JSON event snapshot, per-event SHA-256, and a linked SHA-256 chain. These are tamper-evident checksums, not keyed signatures, and they do not replace an independently administered immutable evidence archive.
+
+## Single startup workflow and ports
+
+- Start the Replit **Project** workflow or run `bash scripts/start-honeyprobe.sh` from the repository root.
+- The launcher runs only the Phase 1 API gateway/FastAPI service and the Phase 4 Security Operations Console.
+- The console listens on 5000; the gateway listens on 8080; FastAPI binds only to `127.0.0.1:8180`.
+- Port 5000 is the only Replit web-preview mapping. The API ports are internal and should not be exposed as separate public services.
+- Do not start the old standalone Phase 1 UI, Phase 1 API, or Phase 4 UI workflows alongside this launcher. Phase 2 standalone server and Phase 4 API scaffold are not part of this runtime.
+
+## Environment configuration
+
+| Variable | Use |
+|---|---|
+| `CLERK_SECRET_KEY` | Server-side Clerk middleware. Keep in Replit Secrets. |
+| `CLERK_PUBLISHABLE_KEY` | Server gateway Clerk key. Keep in Replit Secrets. |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Phase 4 browser sign-in. Keep in Replit Secrets/environment. |
+| `HONEYPROBE_ALLOWED_EMAILS` | Comma-separated verified operator email allowlist; configure in environment settings, not source. |
+| `HONEYPROBE_DB_PATH` | Optional SQLite file path; default is the Phase 1 API data directory. Preserve the existing file when restarting. |
+| `HONEYPROBE_ENV` | `development` by default in the launcher; synthetic generation is restricted to development/demo/test. |
+| `HONEYPROBE_CORS_ORIGINS` | Optional explicit browser origins for direct external clients. Same-origin Vite proxy needs no extra origin. |
+| `VITE_CLERK_PROXY_URL` | Clerk browser proxy setting. Leave platform-managed behavior intact; do not hardcode this in the UI. |
+| `PORT`, `HONEYPROBE_INTERNAL_PORT`, `BASE_PATH` | Set by the single launcher for the UI/gateway; normally do not override them manually. |
+
+Clerk is not configured in the current imported workspace. The UI presents an authentication-setup screen and keeps live data locked until Clerk keys and the verified operator allowlist are configured. Never add a development bypass.
+
+## Commands and verification record
+
+Run from the repository root unless noted:
+
+```bash
+# Phase 1 API tests
+cd phases/phase1/artifacts/api-server
+HONEYPROBE_ENV=test PYTHONPATH=python uv run --project ../.. python -m unittest discover -s tests -v
+
+# Phase 2 rules
+cd ../../../phase2
+python -m unittest discover -s tests -v
+
+# Phase 3 package
+cd ../phase3
+python -m unittest discover -s tests -v
+
+# Phase 1 TypeScript checks/build
+cd ../phase1
+pnpm run typecheck
+pnpm run build
+
+# Phase 4 TypeScript checks/build
+cd ../phase4
+pnpm --filter @workspace/security-console run typecheck
+pnpm --filter @workspace/security-console run build
+```
+
+Record actual run results and any package-source blockers in the root `replit.md`. Do not treat API unit tests as proof that the signed-in browser/gateway flow works when Clerk is unavailable.
+
+## Known limits
+
+- The current workspace has no configured Clerk tenant/keys; live UI authorization cannot be exercised end-to-end until the user configures Clerk and the allowlist.
+- The current environment's first locked Python install attempt failed because the package host certificate was not trusted. Do not disable TLS verification; retry only after the package-source/certificate issue is resolved.
+- The web/database decoys are simulations. No Cowrie/SSH service is started; Cowrie is a bounded log import. Mobile/Android telemetry and external threat-intelligence feeds are not connected.
+- Source profiles are local aggregates of persisted addresses/events; there is no external attribution or reputation enrichment.
+- Phase 3 is limited to configured sample-target checks and dry-run previews. No production configuration changes or automated response are performed.
+- Reports include JSON/CSV/printable HTML capabilities; no PDF export, keyed signature, external case-management integration, or independently immutable evidence store is provided.

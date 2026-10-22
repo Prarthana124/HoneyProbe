@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import tempfile
 import unittest
@@ -261,6 +262,129 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertTrue(reset.json()["preserved_observed_events"])
         found = self.client.get(f"/api/events/{observed.json()['id']}")
         self.assertEqual(found.status_code, 200)
+
+    def test_live_event_evidence_profile_report_and_dry_run_audit(self) -> None:
+        with patch.dict(os.environ, {"HONEYPROBE_ENV": "development"}):
+            imported = self.client.post(
+                "/api/imports/cowrie",
+                json={
+                    "entries": [
+                        {
+                            "eventid": "cowrie.login.failed",
+                            "src_ip": "203.0.113.77",
+                            "session": "e2e-observed-session",
+                            "message": "login failed; UNION SELECT username,password FROM users",
+                        }
+                    ]
+                },
+            )
+        self.assertEqual(imported.status_code, 201)
+        event = imported.json()["events"][0]
+        self.assertEqual(event["environment"], "local")
+        self.assertTrue(event["metadata"]["phase2_analysis"])
+        self.assertNotIn("UNION SELECT", json.dumps(event))
+
+        listed = self.client.get("/api/events?include_demo=false&limit=200")
+        self.assertEqual(listed.status_code, 200)
+        self.assertIn(event["id"], {item["id"] for item in listed.json()["items"]})
+
+        profiles = self.client.get("/api/sources/profiles?include_demo=false")
+        self.assertEqual(profiles.status_code, 200)
+        source = next(
+            item for item in profiles.json()
+            if item["source_address"] == "203.0.113.77"
+        )
+        self.assertEqual(source["event_count"], 1)
+        self.assertGreaterEqual(source["category_counts"].get("SQL Injection", 0), 1)
+        self.assertFalse(source["includes_demo_data"])
+
+        evidence_response = self.client.get(f"/api/evidence/{event['id']}")
+        self.assertEqual(evidence_response.status_code, 200)
+        evidence = evidence_response.json()
+        canonical_event = json.dumps(
+            evidence["event"],
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        event_digest = hashlib.sha256(canonical_event.encode("utf-8")).hexdigest()
+        self.assertEqual(evidence["sha256"], event_digest)
+        chain_material = f"{evidence['previous_hash'] or ''}\n{event_digest}".encode("utf-8")
+        self.assertEqual(
+            evidence["chain_hash"],
+            hashlib.sha256(chain_material).hexdigest(),
+        )
+
+        overview = self.client.get("/api/overview?include_demo=false")
+        self.assertEqual(overview.status_code, 200)
+        self.assertNotIn(
+            "test",
+            {item["environment"] for item in overview.json()["recent_events"]},
+        )
+        self.assertIn(event["id"], {item["id"] for item in overview.json()["recent_events"]})
+
+        report_response = self.client.post("/api/reports/generate")
+        self.assertEqual(report_response.status_code, 201)
+        report = report_response.json()
+        self.assertFalse(report["summary"]["includes_demo_data"])
+        self.assertIn(event["id"], {item["id"] for item in report["events"]})
+        report_unsigned = {key: value for key, value in report.items() if key != "sha256"}
+        report_canonical = json.dumps(
+            report_unsigned,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        self.assertEqual(
+            report["sha256"],
+            hashlib.sha256(report_canonical.encode("utf-8")).hexdigest(),
+        )
+
+        denied_action = self.client.post(
+            "/api/adaptive-actions/dry-run",
+            json={
+                "action": "restrict_file_permissions",
+                "reason": "unauthenticated preview attempt",
+            },
+        )
+        self.assertEqual(denied_action.status_code, 403)
+        authorized_preview = self.client.post(
+            "/api/adaptive-actions/dry-run",
+            headers={"x-honeyprobe-operator": "test-verified-operator"},
+            json={
+                "action": "restrict_file_permissions",
+                "reason": "integration test preview only",
+            },
+        )
+        self.assertEqual(authorized_preview.status_code, 201)
+        self.assertEqual(authorized_preview.json()["mode"], "dry_run")
+        self.assertFalse(authorized_preview.json()["applied"])
+        self.assertEqual(
+            authorized_preview.json()["actor_id"],
+            "test-verified-operator",
+        )
+        audit = self.client.get("/api/adaptive-actions/audit")
+        self.assertEqual(audit.status_code, 200)
+        self.assertTrue(
+            any(
+                item["id"] == authorized_preview.json()["id"]
+                and item["applied"] is False
+                for item in audit.json()
+            )
+        )
+
+        with TestClient(app) as restarted_client:
+            persisted_event = restarted_client.get(f"/api/events/{event['id']}")
+            persisted_evidence = restarted_client.get(f"/api/evidence/{event['id']}")
+            persisted_report = restarted_client.get(f"/api/reports/{report['id']}")
+            verified_report = restarted_client.get(
+                "/api/reports/verify",
+                params={"sha256": report["sha256"]},
+            )
+        self.assertEqual(persisted_event.status_code, 200)
+        self.assertEqual(persisted_evidence.json()["sha256"], evidence["sha256"])
+        self.assertEqual(persisted_report.json()["sha256"], report["sha256"])
+        self.assertTrue(verified_report.json()["valid"])
 
 
 if __name__ == "__main__":
