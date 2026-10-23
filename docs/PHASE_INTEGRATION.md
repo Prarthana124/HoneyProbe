@@ -58,7 +58,7 @@ All `/api/*` routes below are served behind the Express gateway. Only `GET /api/
 | `GET /api/evidence/{event_id}` | Event ID in path. | `200 EvidenceRecord` with the canonical event snapshot and hashes, or `404` if absent. |
 | `POST /api/decoys/web/interaction` | Strict `WebInteractionInput`; only route visit, login attempt, or protected-route attempt. There is no password field. | `201 Event`, explicitly marked simulated. |
 | `POST /api/decoys/database/interaction` | Strict operation category and logical decoy target. Arbitrary SQL is not accepted. | `201 Event`, explicitly marked simulated and isolated from the real database. |
-| `POST /api/adaptive-actions/dry-run` | Action and short reason. Requires the gateway-supplied operator identity. | `201 AdaptiveActionAudit` with `mode="dry_run"` and `applied=false`; no live-apply route exists. |
+| `POST /api/adaptive-actions/dry-run` | Action, short reason, and an existing non-test `finding_id`. Requires the gateway-supplied operator identity. | `201 AdaptiveActionAudit` with `mode="dry_run"`, `applied=false`, linked `finding_id`/`evidence_id`, and an evidence-hash-backed preview recommendation; no live-apply route exists. |
 
 `Event` responses include timestamp, source type, event type, severity, source address, target, session, summary, sanitized metadata, environment, ingestion source, and processing status. Synthetic demonstrations use the `test` environment and can be excluded from live lists. Health, validation, authorization, and request-size errors use JSON `error` and `detail` fields; validation errors never echo user input.
 
@@ -102,6 +102,7 @@ Submit this body to the protected `POST /api/imports/cowrie` route from an autho
 | `HONEYPROBE_INTERNAL_PORT` | Optional loopback FastAPI port; default `8180`. |
 | `HONEYPROBE_CORS_ORIGINS` | Optional explicit browser origins for direct external clients. Same-origin Vite proxy needs no extra origin. |
 | `VITE_CLERK_PROXY_URL` | Clerk browser proxy setting. Leave platform-managed behavior intact; do not hardcode this in the UI. |
+| `HONEYPROBE_TRUSTED_PROXY_IPS` | Optional comma-separated exact peer IPs allowed to supply forwarded host/protocol/client-IP headers. Unlisted peers' forwarded headers are ignored. |
 | `PORT`, `BASE_PATH` | Set by the single launcher for the UI; normally do not override them manually. |
 
 Clerk is not configured in the current imported workspace. The UI presents an authentication-setup screen and keeps live data locked until Clerk keys and the verified operator allowlist are configured. Never add a development bypass.

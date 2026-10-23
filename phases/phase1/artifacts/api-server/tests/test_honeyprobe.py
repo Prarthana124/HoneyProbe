@@ -86,7 +86,13 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertFalse(accepted.json()["metadata"]["login_data_collected"])
 
     def test_loopback_web_decoy_records_real_visit_and_phase2_evidence(self) -> None:
-        response = self.client.get("/decoy/%2e%2e/%2e%2e/local-check")
+        response = self.client.get(
+            "/decoy/%2e%2e/%2e%2e/local-check",
+            headers={
+                "x-forwarded-for": "203.0.113.222",
+                "user-agent": "private-user-agent-marker",
+            },
+        )
         self.assertEqual(response.status_code, 404)
         self.assertIn("X-HoneyProbe-Event-ID", response.headers)
         self.assertNotIn("../../local-check", response.text)
@@ -98,6 +104,9 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(event["ingestion_source"], "local_web_decoy")
         self.assertFalse(event["metadata"]["simulated"])
         self.assertEqual(event["target"], "/unmatched")
+        self.assertIsNone(event["source_address"])
+        self.assertNotIn("203.0.113.222", json.dumps(event))
+        self.assertNotIn("private-user-agent-marker", json.dumps(event))
         self.assertTrue(
             any(
                 item["category"] == "Path Traversal"
@@ -430,6 +439,7 @@ class HoneyProbeApiTests(unittest.TestCase):
             "/api/adaptive-actions/dry-run",
             json={
                 "action": "restrict_file_permissions",
+                "finding_id": "untrusted-finding",
                 "reason": "unauthenticated preview attempt",
             },
         )
@@ -439,6 +449,10 @@ class HoneyProbeApiTests(unittest.TestCase):
             headers={"x-honeyprobe-operator": "test-verified-operator"},
             json={
                 "action": "restrict_file_permissions",
+                "finding_id": self.client.get(
+                    "/api/findings",
+                    params={"event_id": event["id"], "include_demo": "true"},
+                ).json()[0]["id"],
                 "reason": "integration test preview only",
             },
         )
@@ -449,12 +463,25 @@ class HoneyProbeApiTests(unittest.TestCase):
             authorized_preview.json()["actor_id"],
             "test-verified-operator",
         )
+        self.assertEqual(
+            authorized_preview.json()["finding_id"],
+            authorized_preview.json()["preview"]["evidence_context"]["finding_id"],
+        )
+        self.assertEqual(
+            authorized_preview.json()["evidence_id"],
+            authorized_preview.json()["preview"]["evidence_context"]["evidence_id"],
+        )
+        self.assertEqual(
+            authorized_preview.json()["preview"]["recommendation"]["mode"],
+            "preview_only",
+        )
         audit = self.client.get("/api/adaptive-actions/audit")
         self.assertEqual(audit.status_code, 200)
         self.assertTrue(
             any(
                 item["id"] == authorized_preview.json()["id"]
                 and item["applied"] is False
+                and item["evidence_id"] == authorized_preview.json()["evidence_id"]
                 for item in audit.json()
             )
         )
@@ -463,6 +490,7 @@ class HoneyProbeApiTests(unittest.TestCase):
             persisted_event = restarted_client.get(f"/api/events/{event['id']}")
             persisted_evidence = restarted_client.get(f"/api/evidence/{event['id']}")
             persisted_report = restarted_client.get(f"/api/reports/{report['id']}")
+            persisted_audit = restarted_client.get("/api/adaptive-actions/audit")
             verified_report = restarted_client.get(
                 "/api/reports/verify",
                 params={"sha256": report["sha256"]},
@@ -470,6 +498,20 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(persisted_event.status_code, 200)
         self.assertEqual(persisted_evidence.json()["sha256"], evidence["sha256"])
         self.assertEqual(persisted_report.json()["sha256"], report["sha256"])
+        stored_action = next(
+            item
+            for item in persisted_audit.json()
+            if item["id"] == authorized_preview.json()["id"]
+        )
+        self.assertFalse(stored_action["applied"])
+        self.assertEqual(
+            stored_action["finding_id"],
+            authorized_preview.json()["finding_id"],
+        )
+        self.assertEqual(
+            stored_action["evidence_id"],
+            authorized_preview.json()["evidence_id"],
+        )
         self.assertTrue(verified_report.json()["valid"])
 
 

@@ -22,9 +22,21 @@
 import type { IncomingHttpHeaders } from 'http';
 import type { RequestHandler } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import { resolveProxyHeaders } from '../lib/trustedProxy.mjs';
 
 const CLERK_FAPI = 'https://frontend-api.clerk.dev';
 export const CLERK_PROXY_PATH = '/api/__clerk';
+
+function resolveRequestProxyHeaders(req: {
+  headers: IncomingHttpHeaders;
+  socket?: { remoteAddress?: string };
+}) {
+  return resolveProxyHeaders(req.socket?.remoteAddress, {
+    'x-forwarded-for': req.headers['x-forwarded-for'],
+    'x-forwarded-host': req.headers['x-forwarded-host'],
+    'x-forwarded-proto': req.headers['x-forwarded-proto'],
+  });
+}
 
 /**
  * Returns the first effective public hostname for the given request,
@@ -45,11 +57,10 @@ export const CLERK_PROXY_PATH = '/api/__clerk';
  */
 export function getClerkProxyHost(req: {
   headers: IncomingHttpHeaders;
+  socket?: { remoteAddress?: string };
 }): string | undefined {
-  const forwarded = req.headers['x-forwarded-host'];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const firstHop = raw?.split(',')[0]?.trim();
-  return firstHop || req.headers.host?.trim() || undefined;
+  const proxyHeaders = resolveRequestProxyHeaders(req);
+  return proxyHeaders.host || req.headers.host?.trim() || undefined;
 }
 
 export function clerkProxyMiddleware(): RequestHandler {
@@ -73,20 +84,17 @@ export function clerkProxyMiddleware(): RequestHandler {
       path.replace(new RegExp(`^${CLERK_PROXY_PATH}`), ''),
     on: {
       proxyReq: (proxyReq, req) => {
-        const protocol = req.headers['x-forwarded-proto'] || 'https';
-        const host = getClerkProxyHost(req) || '';
+        const proxyHeaders = resolveRequestProxyHeaders(req);
+        const protocol = proxyHeaders.protocol || 'https';
+        const host = proxyHeaders.host || req.headers.host?.trim() || '';
         const proxyUrl = `${protocol}://${host}${CLERK_PROXY_PATH}`;
 
         proxyReq.setHeader('Clerk-Proxy-Url', proxyUrl);
         proxyReq.setHeader('Clerk-Secret-Key', secretKey);
 
-        const xff = req.headers['x-forwarded-for'];
-        const clientIp =
-          (Array.isArray(xff) ? xff[0] : xff)?.split(',')[0]?.trim() ||
-          req.socket?.remoteAddress ||
-          '';
-        if (clientIp) {
-          proxyReq.setHeader('X-Forwarded-For', clientIp);
+        proxyReq.removeHeader('x-forwarded-for');
+        if (proxyHeaders.clientIp) {
+          proxyReq.setHeader('X-Forwarded-For', proxyHeaders.clientIp);
         }
       },
       // Clerk's dynamic Frontend API responses (/v1/environment, /v1/client,

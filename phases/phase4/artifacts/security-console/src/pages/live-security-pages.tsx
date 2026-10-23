@@ -569,6 +569,7 @@ export function LiveIncidents() {
 export function LiveAdaptation() {
   const queryClient = useQueryClient();
   const [action, setAction] = useState<AdaptiveActionAudit['action']>('restrict_file_permissions');
+  const [findingId, setFindingId] = useState('');
   const [reason, setReason] = useState('Operator requested a preview; do not apply changes.');
   const audit = useQuery({
     queryKey: ['honeyprobe', 'adaptive-action-audit'],
@@ -580,15 +581,22 @@ export function LiveAdaptation() {
     queryKey: ['honeyprobe', 'self-tests'],
     queryFn: () => honeyProbeRequest<SelfTestResult[]>('/api/self-tests'),
   });
+  const findings = useQuery({
+    queryKey: ['honeyprobe', 'findings', 'adaptation'],
+    queryFn: () => honeyProbeRequest<DetectionFinding[]>('/api/findings?include_demo=false&limit=500'),
+  });
+  const selectedFindingId = findings.data?.some((item) => item.id === findingId)
+    ? findingId
+    : findings.data?.[0]?.id ?? '';
   const preview = useMutation({
     mutationFn: () =>
       honeyProbeRequest<AdaptiveActionAudit>('/api/adaptive-actions/dry-run', {
         method: 'POST',
-        body: JSON.stringify({ action, reason }),
+         body: JSON.stringify({ action, reason, finding_id: selectedFindingId }),
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['honeyprobe', 'adaptive-action-audit'] }),
   });
-  const error = audit.error ?? tests.error ?? preview.error;
+  const error = audit.error ?? tests.error ?? findings.error ?? preview.error;
 
   return (
     <LiveConsoleLayout>
@@ -605,11 +613,27 @@ export function LiveAdaptation() {
           <div>
             <h2 className="text-sm font-semibold">Request a dry-run preview</h2>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              The Phase 3 adapter forces apply_changes=false. Every accepted request is audited with the verified operator ID; applied actions are not supported.
+              Link each preview to a real finding and its stored evidence. The Phase 3 adapter forces apply_changes=false; applied actions are not supported.
             </p>
           </div>
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-[1fr_1.4fr_auto] md:items-end">
+        <div className="mt-5 grid gap-3 md:grid-cols-[1.25fr_1fr_1.4fr_auto] md:items-end">
+          <label className="block text-xs text-muted-foreground">
+            Evidence-linked finding
+            <select
+              value={selectedFindingId}
+              onChange={(event) => setFindingId(event.target.value)}
+              disabled={!findings.data?.length}
+              className="mt-2 h-10 w-full rounded-lg border border-input bg-background px-3 text-foreground"
+            >
+              {!findings.data?.length && <option value="">No live findings available</option>}
+              {findings.data?.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.rule_name} · {item.severity} · {item.id.slice(-8)}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="block text-xs text-muted-foreground">
             Preview action
             <select value={action} onChange={(event) => setAction(event.target.value as AdaptiveActionAudit['action'])} className="mt-2 h-10 w-full rounded-lg border border-input bg-background px-3 text-foreground">
@@ -623,7 +647,7 @@ export function LiveAdaptation() {
           </label>
           <button
             onClick={() => preview.mutate()}
-            disabled={preview.isPending || !reason.trim()}
+            disabled={preview.isPending || !reason.trim() || !selectedFindingId}
             className="h-10 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:opacity-50"
             data-testid="button-run-dry-run"
           >
@@ -633,6 +657,7 @@ export function LiveAdaptation() {
         {preview.data && (
           <div className="mt-4 rounded-lg border border-primary/25 bg-primary/5 p-4 text-xs" data-testid="status-dry-run">
             Recorded as <span className="mono">{preview.data.mode}</span>; result: {preview.data.result}. Applied: {String(preview.data.applied)}.
+            {preview.data.evidence_id && <> Evidence: <span className="mono">{preview.data.evidence_id}</span>.</>}
           </div>
         )}
       </Panel>

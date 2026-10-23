@@ -12,6 +12,16 @@ bash scripts/start-honeyprobe.sh
 
 This is the single supported startup procedure. It starts the Phase 1 Express/Clerk gateway and FastAPI service, then the Phase 4 console. The ports are deliberately separate:
 
+### Docker Compose
+
+For a local containerized development startup, copy `.env.docker.example` to `.env`, fill in the matching Clerk development keys and verified operator allowlist if Live Mode is needed, then run:
+
+```bash
+docker compose up --build
+```
+
+Compose runs the existing combined HoneyProbe launcher in one container, publishes only the web console, checks both the console and API gateway health, and stores SQLite data in the persistent `honeyprobe-data` volume. Without Clerk configuration, protected Live API routes remain locked; there is no authentication bypass. `docker compose down` stops the app but preserves the database volume. The Compose setup has not yet been runtime-tested in this workspace because the Docker daemon is unavailable.
+
 | Service | Bind | Port |
 |---|---|---:|
 | Phase 4 web console | `0.0.0.0` | `5000` |
@@ -50,6 +60,7 @@ Other settings:
 | `HONEYPROBE_GATEWAY_PORT` | Internal Express port; defaults to `8080`. |
 | `HONEYPROBE_INTERNAL_PORT` | Loopback FastAPI port; defaults to `8180`. |
 | `HONEYPROBE_CORS_ORIGINS` | Optional comma-separated origins for a separate cross-origin client. The integrated same-origin proxy does not need it. |
+| `HONEYPROBE_TRUSTED_PROXY_IPS` | Optional comma-separated exact proxy-peer IP allowlist. Forwarded client, host, and protocol values are ignored unless the immediate socket peer is listed. |
 | `VITE_CLERK_PROXY_URL` | Optional Clerk browser proxy setting; leave platform-managed behavior intact. |
 | `PORT`, `BASE_PATH` | Set by the launcher for the console; do not override for the Project workflow. |
 

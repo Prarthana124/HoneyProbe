@@ -1,0 +1,45 @@
+services:
+  honeyprobe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      BASE_PATH: /
+      HONEYPROBE_GATEWAY_PORT: 8080
+      HONEYPROBE_INTERNAL_PORT: 8180
+      HONEYPROBE_ENV: ${HONEYPROBE_ENV:-development}
+      HONEYPROBE_DB_PATH: /data/honeyprobe.sqlite3
+      HONEYPROBE_CORS_ORIGINS: ${HONEYPROBE_CORS_ORIGINS:-}
+      HONEYPROBE_TRUSTED_PROXY_IPS: ${HONEYPROBE_TRUSTED_PROXY_IPS:-}
+      HONEYPROBE_ALLOWED_EMAILS: ${HONEYPROBE_ALLOWED_EMAILS:-}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
+      VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
+      VITE_CLERK_PROXY_URL: ${VITE_CLERK_PROXY_URL:-}
+    ports:
+      - "${HONEYPROBE_WEB_PORT:-5000}:5000"
+    volumes:
+      - honeyprobe-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          Promise.all([
+          fetch('http://127.0.0.1:5000/'),
+          fetch('http://127.0.0.1:8080/api/healthz')
+          ]).then((responses) =>
+          process.exit(responses.every((response) => response.ok) ? 0 : 1)
+          ).catch(() => process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+volumes:
+  honeyprobe-data:

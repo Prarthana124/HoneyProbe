@@ -95,13 +95,17 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
         method: str,
         path: str,
         payload: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> tuple[int, dict[str, Any]]:
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
+        request_headers = dict(headers or {})
+        if body is not None:
+            request_headers["Content-Type"] = "application/json"
         request = urllib.request.Request(
             f"{self.base_url}{path}",
             data=body,
             method=method,
-            headers={"Content-Type": "application/json"} if body is not None else {},
+            headers=request_headers,
         )
         try:
             response = urllib.request.urlopen(request, timeout=5)
@@ -174,6 +178,7 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
             "/api/adaptive-actions/dry-run",
             {
                 "action": "restrict_file_permissions",
+                "finding_id": "unauthorized-finding",
                 "reason": "unauthorized restart integration check",
             },
         )
@@ -187,6 +192,26 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
                 "unauthorized restart integration check" in item["reason"]
                 for item in audit
             )
+        )
+
+        status, preview_action = self.request(
+            "POST",
+            "/api/adaptive-actions/dry-run",
+            {
+                "action": "restrict_file_permissions",
+                "finding_id": sql_finding["id"],
+                "reason": "process restart evidence-backed preview",
+            },
+            headers={"x-honeyprobe-operator": "process-restart-test-operator"},
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(preview_action["mode"], "dry_run")
+        self.assertFalse(preview_action["applied"])
+        self.assertEqual(preview_action["finding_id"], sql_finding["id"])
+        self.assertEqual(preview_action["evidence_id"], sql_finding["evidence_id"])
+        self.assertEqual(
+            preview_action["preview"]["evidence_context"]["evidence_sha256"],
+            preview_action["preview"]["recommendation"]["basis"]["evidence_sha256"],
         )
 
         status, tests = self.request("POST", "/api/self-tests/run", {})
@@ -235,6 +260,14 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
                 "evidence_id"
             ],
         )
+        status, stored_audit = self.request("GET", "/api/adaptive-actions/audit")
+        self.assertEqual(status, 200)
+        persisted_action = next(
+            item for item in stored_audit if item["id"] == preview_action["id"]
+        )
+        self.assertFalse(persisted_action["applied"])
+        self.assertEqual(persisted_action["finding_id"], sql_finding["id"])
+        self.assertEqual(persisted_action["evidence_id"], sql_finding["evidence_id"])
 
         status, stored_report = self.request(
             "GET", f"/api/reports/{report['id']}"
@@ -299,6 +332,11 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
 
         self.stop_service()
         self.start_service()
+        status, stored_event = self.request("GET", f"/api/events/{event_id}")
+        self.assertEqual(status, 200)
+        self.assertEqual(stored_event["id"], event_id)
+        self.assertEqual(stored_event["target"], "/unmatched")
+        self.assertFalse(stored_event["metadata"]["simulated"])
         status, stored_findings = self.request(
             "GET",
             f"/api/findings?event_id={event_id}&include_demo=true",

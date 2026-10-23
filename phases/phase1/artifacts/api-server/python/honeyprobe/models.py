@@ -213,6 +213,7 @@ class DetectionFinding(StrictModel):
 
 class AdaptiveActionInput(StrictModel):
     action: Literal["restrict_file_permissions", "restrict_configuration_file_permissions"]
+    finding_id: str = Field(min_length=1, max_length=128)
     reason: str = Field(min_length=1, max_length=300)
 
 
@@ -226,6 +227,8 @@ class AdaptiveActionAudit(StrictModel):
     result: Literal["previewed", "blocked", "failed"]
     reason: str
     preview: dict[str, Any]
+    finding_id: str | None = None
+    evidence_id: str | None = None
 
 
 class SelfTestResult(StrictModel):

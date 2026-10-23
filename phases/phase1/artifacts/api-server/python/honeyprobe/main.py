@@ -70,6 +70,7 @@ from honeyprobe.storage import (
     create_adaptive_action_audit,
     database_health,
     get_generated_report,
+    get_detection_finding,
     get_event,
     initialize_database,
     query_evidence,
@@ -790,10 +791,53 @@ def adaptive_action_dry_run(
     if not actor_id:
         raise HTTPException(status_code=403, detail="A verified operator identity is required.")
 
+    finding = get_detection_finding(payload.finding_id)
+    if finding is None:
+        raise HTTPException(
+            status_code=404,
+            detail="The referenced non-test detection finding was not found.",
+        )
+    evidence_records = query_evidence(
+        event_id=finding.event_id,
+        limit=1,
+        include_demo=False,
+    )
+    evidence = next(
+        (record for record in evidence_records if record.id == finding.evidence_id),
+        None,
+    )
+    if evidence is None:
+        raise HTTPException(
+            status_code=409,
+            detail="The finding's linked evidence record is unavailable.",
+        )
+
+    evidence_context = {
+        "finding_id": finding.id,
+        "event_id": finding.event_id,
+        "evidence_id": evidence.id,
+        "evidence_sha256": evidence.sha256,
+        "rule_name": finding.rule_name,
+        "severity": finding.severity,
+        "detection_reason": finding.reason,
+    }
+    recommendation = {
+        "action": payload.action,
+        "basis": evidence_context,
+        "statement": (
+            f"Review the {finding.rule_name} finding and its linked evidence before "
+            "considering this configuration control. This request only previews "
+            "the configured Phase 3 checks; it does not mitigate the event."
+        ),
+        "mode": "preview_only",
+    }
+
     from honeyprobe.phase3_adapter import run_phase3_dry_run
 
     try:
         preview = run_phase3_dry_run()
+        preview["evidence_context"] = evidence_context
+        preview["recommendation"] = recommendation
         result = (
             "blocked"
             if preview["blocked_actions"] or not preview["healthy"]
@@ -806,6 +850,8 @@ def adaptive_action_dry_run(
             reason=payload.reason,
             result="failed",
             preview={"error": type(error).__name__, "applied_actions": 0},
+            finding_id=finding.id,
+            evidence_id=evidence.id,
         )
         raise HTTPException(
             status_code=503,
@@ -818,6 +864,8 @@ def adaptive_action_dry_run(
         reason=payload.reason,
         result=result,
         preview=preview,
+        finding_id=finding.id,
+        evidence_id=evidence.id,
     )
 
 

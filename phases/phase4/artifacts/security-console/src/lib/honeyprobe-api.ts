@@ -86,6 +86,8 @@ export type AdaptiveActionAudit = {
   result: 'previewed' | 'blocked' | 'failed';
   reason: string;
   preview: Record<string, unknown>;
+  finding_id: string | null;
+  evidence_id: string | null;
 };
 
 export type ReportDocument = {

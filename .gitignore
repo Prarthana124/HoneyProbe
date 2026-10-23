@@ -20,6 +20,7 @@ venv/
 .env.*
 !.env.example
 !.env.sample
+!.env.docker.example
 *.pem
 *.key
 

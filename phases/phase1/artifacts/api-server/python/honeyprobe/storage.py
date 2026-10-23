@@ -481,6 +481,30 @@ def query_findings(
     ]
 
 
+def get_detection_finding(finding_id: str) -> DetectionFinding | None:
+    with db_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT detection_findings.* FROM detection_findings
+            JOIN events ON events.id = detection_findings.event_id
+            WHERE detection_findings.id = ? AND events.environment != 'test'
+            """,
+            (finding_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return DetectionFinding(
+        id=row["id"],
+        event_id=row["event_id"],
+        evidence_id=row["evidence_id"],
+        detector=row["detector"],
+        rule_name=row["rule_name"],
+        severity=row["severity"],
+        reason=row["reason"],
+        created_at=datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00")),
+    )
+
+
 def query_evidence(
     *,
     event_id: str | None = None,
@@ -516,7 +540,14 @@ def create_adaptive_action_audit(
     reason: str,
     result: str,
     preview: dict[str, Any],
+    finding_id: str | None = None,
+    evidence_id: str | None = None,
 ) -> AdaptiveActionAudit:
+    stored_preview = {
+        **preview,
+        "finding_id": finding_id,
+        "evidence_id": evidence_id,
+    }
     audit = AdaptiveActionAudit(
         id=f"action_{uuid.uuid4().hex}",
         action=action,
@@ -526,7 +557,9 @@ def create_adaptive_action_audit(
         applied=False,
         result=result,
         reason=reason,
-        preview=preview,
+        preview=stored_preview,
+        finding_id=finding_id,
+        evidence_id=evidence_id,
     )
     with db_connection() as connection:
         connection.execute(
@@ -569,6 +602,8 @@ def read_adaptive_action_audit(limit: int = 100) -> list[AdaptiveActionAudit]:
             result=row["result"],
             reason=row["reason"],
             preview=json.loads(row["preview_json"]),
+            finding_id=json.loads(row["preview_json"]).get("finding_id"),
+            evidence_id=json.loads(row["preview_json"]).get("evidence_id"),
         )
         for row in rows
     ]

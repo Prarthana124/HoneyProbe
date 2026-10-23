@@ -8,6 +8,7 @@
     "build": "uv sync --locked --project ../.. && uv run --project ../.. python -m compileall -q python/honeyprobe && node build.mjs",
     "start": "NODE_ENV=production node dist/index.mjs",
     "test": "HONEYPROBE_ENV=test PYTHONPATH=python uv run --project ../.. python -m unittest discover -s tests -v",
+    "test:proxy": "node --test tests/trusted_proxy.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
