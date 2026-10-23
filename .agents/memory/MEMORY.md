@@ -1,1 +1,2 @@
 - [HoneyProbe project requirements](honeyprobe-project-requirements.md) — master acceptance checklist plus Replit runtime and combined-workflow constraints.
+- [Managed artifact manifests](managed-artifact-manifests.md) — stage a sibling TOML and use the verified replacement flow; direct edits are blocked.
