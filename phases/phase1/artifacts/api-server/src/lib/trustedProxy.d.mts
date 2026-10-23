@@ -16,3 +16,7 @@ export function resolveProxyHeaders(
   headers?: ProxyHeaders,
   trustedProxyIps?: string | string[],
 ): ProxyResolution;
+
+export function validateTrustedProxyAllowlist(
+  trustedProxyIps?: string | string[],
+): void;

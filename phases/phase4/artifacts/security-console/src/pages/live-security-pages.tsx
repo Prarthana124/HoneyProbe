@@ -588,6 +588,25 @@ export function LiveAdaptation() {
   const selectedFindingId = findings.data?.some((item) => item.id === findingId)
     ? findingId
     : findings.data?.[0]?.id ?? '';
+  const selectedFinding = findings.data?.find(
+    (item) => item.id === selectedFindingId,
+  );
+  const linkedEvidence = useQuery({
+    queryKey: ['honeyprobe', 'adaptation-evidence', selectedFinding?.event_id],
+    queryFn: () => {
+      if (!selectedFinding) {
+        throw new Error('Select a finding before loading linked evidence.');
+      }
+      return honeyProbeRequest<EvidenceRecord>(
+        `/api/evidence/${encodeURIComponent(selectedFinding.event_id)}`,
+      );
+    },
+    enabled: Boolean(selectedFinding),
+  });
+  const evidenceMatchesFinding =
+    Boolean(selectedFinding) &&
+    linkedEvidence.data?.event_id === selectedFinding?.event_id &&
+    linkedEvidence.data?.id === selectedFinding?.evidence_id;
   const preview = useMutation({
     mutationFn: () =>
       honeyProbeRequest<AdaptiveActionAudit>('/api/adaptive-actions/dry-run', {
@@ -596,7 +615,12 @@ export function LiveAdaptation() {
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['honeyprobe', 'adaptive-action-audit'] }),
   });
-  const error = audit.error ?? tests.error ?? findings.error ?? preview.error;
+  const error =
+    audit.error ??
+    tests.error ??
+    findings.error ??
+    linkedEvidence.error ??
+    preview.error;
 
   return (
     <LiveConsoleLayout>
@@ -647,13 +671,50 @@ export function LiveAdaptation() {
           </label>
           <button
             onClick={() => preview.mutate()}
-            disabled={preview.isPending || !reason.trim() || !selectedFindingId}
+            disabled={
+              preview.isPending ||
+              linkedEvidence.isLoading ||
+              !evidenceMatchesFinding ||
+              !reason.trim() ||
+              !selectedFindingId
+            }
             className="h-10 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:opacity-50"
             data-testid="button-run-dry-run"
           >
             {preview.isPending ? 'Recording preview…' : 'Run safe preview'}
           </button>
         </div>
+        {selectedFinding && (
+          <div className="mt-4 rounded-lg border border-border bg-muted/20 p-4 text-xs">
+            <div className="font-semibold">
+              Selected finding: {selectedFinding.rule_name} · {selectedFinding.severity}
+            </div>
+            <p className="mt-2 leading-5 text-muted-foreground">
+              {selectedFinding.reason}
+            </p>
+            <p className="mono mt-2 break-all text-[10px] text-muted-foreground">
+              Finding {selectedFinding.id} · Event {selectedFinding.event_id}
+            </p>
+            {linkedEvidence.isLoading ? (
+              <p className="mt-3 text-muted-foreground">Loading persisted linked evidence…</p>
+            ) : evidenceMatchesFinding && linkedEvidence.data ? (
+              <div className="mt-3 rounded-md border border-border bg-background/70 p-3">
+                <div className="font-medium">Persisted linked evidence</div>
+                <p className="mono mt-1 break-all text-[10px] text-muted-foreground">
+                  {linkedEvidence.data.id} · SHA-256 {linkedEvidence.data.sha256}
+                </p>
+                <p className="mt-2">{linkedEvidence.data.event.summary}</p>
+                <p className="mono mt-1 break-all text-[10px] text-muted-foreground">
+                  {linkedEvidence.data.event.source_type} · {linkedEvidence.data.event.target} · {formatDateTime(linkedEvidence.data.captured_at)}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-3 text-destructive">
+                The selected finding’s linked evidence could not be verified.
+              </p>
+            )}
+          </div>
+        )}
         {preview.data && (
           <div className="mt-4 rounded-lg border border-primary/25 bg-primary/5 p-4 text-xs" data-testid="status-dry-run">
             Recorded as <span className="mono">{preview.data.mode}</span>; result: {preview.data.result}. Applied: {String(preview.data.applied)}.

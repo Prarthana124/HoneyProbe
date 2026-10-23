@@ -106,14 +106,24 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(event["target"], "/unmatched")
         self.assertIsNone(event["source_address"])
         self.assertNotIn("203.0.113.222", json.dumps(event))
-        self.assertNotIn("private-user-agent-marker", json.dumps(event))
+        self.assertEqual(event["metadata"]["network"]["protocol"], "http")
+        self.assertEqual(event["metadata"]["network"]["method"], "GET")
+        self.assertEqual(event["metadata"]["network"]["path"], "/unmatched")
+        self.assertEqual(
+            event["metadata"]["network"]["user_agent"],
+            "private-user-agent-marker",
+        )
+        self.assertIsNotNone(event["timestamp"])
+        self.assertEqual(
+            event["metadata"]["network"]["source_port"],
+            50000,
+        )
         self.assertTrue(
             any(
                 item["category"] == "Path Traversal"
                 for item in event["metadata"]["phase2_analysis"]
             )
         )
-
         findings = self.client.get(
             "/api/findings",
             params={"event_id": event_id, "include_demo": "true"},
@@ -126,6 +136,22 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(evidence.status_code, 200)
         self.assertEqual(findings.json()[0]["evidence_id"], evidence.json()["id"])
         self.assertNotIn("../../local-check", evidence.text)
+
+    def test_local_decoy_metadata_redacts_credentials_from_user_agent(self) -> None:
+        response = self.client.get(
+            "/decoy/about",
+            headers={
+                "user-agent": "HoneyProbeTest token=do-not-store authorization=Bearer secret-value",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        event = self.client.get(
+            f"/api/events/{response.headers['X-HoneyProbe-Event-ID']}"
+        ).json()
+        user_agent = event["metadata"]["network"]["user_agent"]
+        self.assertEqual(user_agent, "HoneyProbeTest token=[redacted] authorization=[redacted]")
+        self.assertNotIn("do-not-store", json.dumps(event))
+        self.assertNotIn("secret-value", json.dumps(event))
 
     def test_loopback_web_decoy_login_never_accepts_or_persists_credentials(self) -> None:
         private_marker = "decoy-password-must-not-persist"
@@ -513,6 +539,95 @@ class HoneyProbeApiTests(unittest.TestCase):
             authorized_preview.json()["evidence_id"],
         )
         self.assertTrue(verified_report.json()["valid"])
+
+    def test_adaptive_action_rejects_missing_test_only_and_unlinked_findings(self) -> None:
+        with patch.dict(os.environ, {"HONEYPROBE_ENV": "development"}):
+            real_import = self.client.post(
+                "/api/imports/cowrie",
+                json={
+                    "entries": [
+                        {
+                            "eventid": "cowrie.login.failed",
+                            "src_ip": "198.51.100.61",
+                            "session": "dry-run-validation-real",
+                            "message": "failed login; UNION SELECT name FROM accounts",
+                        }
+                    ]
+                },
+            )
+        self.assertEqual(real_import.status_code, 201)
+        real_event = real_import.json()["events"][0]
+        real_findings = self.client.get(
+            "/api/findings",
+            params={"event_id": real_event["id"], "include_demo": "true"},
+        )
+        self.assertEqual(real_findings.status_code, 200)
+        real_finding = next(
+            item for item in real_findings.json() if item["rule_name"] == "SQL Injection"
+        )
+
+        with patch.dict(os.environ, {"HONEYPROBE_ENV": "test"}):
+            test_import = self.client.post(
+                "/api/imports/cowrie",
+                json={
+                    "entries": [
+                        {
+                            "eventid": "cowrie.login.failed",
+                            "src_ip": "198.51.100.62",
+                            "session": "dry-run-validation-test",
+                            "message": "failed login; UNION SELECT name FROM accounts",
+                        }
+                    ]
+                },
+            )
+        self.assertEqual(test_import.status_code, 201)
+        test_event = test_import.json()["events"][0]
+        self.assertEqual(test_event["environment"], "test")
+        test_findings = self.client.get(
+            "/api/findings",
+            params={"event_id": test_event["id"], "include_demo": "true"},
+        )
+        self.assertEqual(test_findings.status_code, 200)
+        test_finding = next(
+            item for item in test_findings.json() if item["rule_name"] == "SQL Injection"
+        )
+
+        def request_preview(finding_id: str):
+            return self.client.post(
+                "/api/adaptive-actions/dry-run",
+                headers={"x-honeyprobe-operator": "dry-run-validation-operator"},
+                json={
+                    "action": "restrict_file_permissions",
+                    "finding_id": finding_id,
+                    "reason": "Validate finding and evidence requirements.",
+                },
+            )
+
+        missing = request_preview("finding_does_not_exist")
+        self.assertEqual(missing.status_code, 404)
+
+        test_only = request_preview(test_finding["id"])
+        self.assertEqual(test_only.status_code, 404)
+
+        with patch("honeyprobe.main.query_evidence", return_value=[]):
+            unlinked = request_preview(real_finding["id"])
+        self.assertEqual(unlinked.status_code, 409)
+        self.assertIn("linked evidence", unlinked.json()["detail"])
+
+        audit = self.client.get("/api/adaptive-actions/audit")
+        self.assertEqual(audit.status_code, 200)
+        self.assertFalse(
+            any(
+                item["finding_id"]
+                in {
+                    "finding_does_not_exist",
+                    test_finding["id"],
+                    real_finding["id"],
+                }
+                and item["reason"] == "Validate finding and evidence requirements."
+                for item in audit.json()
+            )
+        )
 
 
 if __name__ == "__main__":

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import hashlib
+import ipaddress
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -109,6 +111,61 @@ _LOCAL_DECOY_WINDOW_SECONDS = 60.0
 _LOCAL_DECOY_MAX_REQUESTS = 60
 _LOCAL_DECOY_REQUESTS: deque[float] = deque()
 _LOCAL_DECOY_REQUESTS_LOCK = threading.Lock()
+_SENSITIVE_USER_AGENT_VALUE = re.compile(
+    r"(?i)\b(password|passwd|token|secret|credential|api[_-]?key)\b"
+    r"(\s*[:=]\s*)([^\s,;]+)"
+)
+_AUTHORIZATION_USER_AGENT_VALUE = re.compile(
+    r"(?i)\bauthorization\s*[:=]\s*(?:bearer\s+)?[^\s,;]+"
+)
+
+
+def _safe_user_agent(value: str | None) -> str | None:
+    if not value:
+        return None
+    safe = "".join(character for character in value if character >= " " and character != "\x7f")
+    safe = _AUTHORIZATION_USER_AGENT_VALUE.sub("authorization=[redacted]", safe)
+    safe = _SENSITIVE_USER_AGENT_VALUE.sub(r"\1\2[redacted]", safe)
+    return safe[:256] or None
+
+
+def _local_request_network_metadata(
+    request: Request,
+    safe_path: str,
+) -> tuple[str | None, dict[str, object]]:
+    client = request.client
+    source_address: str | None = None
+    source_port: int | None = None
+    if client is not None:
+        try:
+            source_ip = ipaddress.ip_address(client.host)
+            if source_ip.is_loopback:
+                source_address = str(source_ip)
+        except ValueError:
+            # Test clients and non-IP ASGI peers do not supply a source IP.
+            pass
+        if isinstance(client.port, int) and 0 < client.port <= 65535:
+            source_port = client.port
+
+    server = request.scope.get("server")
+    destination_port = (
+        server[1]
+        if isinstance(server, tuple)
+        and len(server) > 1
+        and isinstance(server[1], int)
+        and 0 < server[1] <= 65535
+        else None
+    )
+    scheme = request.scope.get("scheme")
+    protocol = scheme if scheme in {"http", "https"} else None
+    return source_address, {
+        "protocol": protocol,
+        "source_port": source_port,
+        "destination_port": destination_port,
+        "method": request.method.upper()[:10],
+        "path": safe_path[:200],
+        "user_agent": _safe_user_agent(request.headers.get("user-agent")),
+    }
 
 
 def _check_local_decoy_rate_limit() -> None:
@@ -148,6 +205,12 @@ def _local_decoy_response(
         interaction = "protected_route_attempt"
     else:
         interaction = "route_visit"
+    known_route = normalized_route in WEB_DECOY_PAGES
+    safe_route = normalized_route if known_route else "/unmatched"
+    source_address, network_metadata = _local_request_network_metadata(
+        request,
+        safe_route,
+    )
     event = record_web_interaction(
         WebInteractionInput(
             route=normalized_route,
@@ -156,8 +219,9 @@ def _local_decoy_response(
         ),
         simulated=False,
         detection_input=normalized_route,
+        source_address=source_address,
+        network_metadata=network_metadata,
     )
-    known_route = normalized_route in WEB_DECOY_PAGES
     content = (
         "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
         '<meta name="viewport" content="width=device-width,initial-scale=1">'

@@ -11,8 +11,10 @@ import {
 } from "./middlewares/clerkProxyMiddleware";
 import { requireOperator } from "./middlewares/operatorAuth";
 import { logger } from "./lib/logger";
+import { validateTrustedProxyAllowlist } from "./lib/trustedProxy.mjs";
 
 const app = express();
+validateTrustedProxyAllowlist();
 const internalPort = Number(process.env.HONEYPROBE_INTERNAL_PORT ?? "8180");
 const pythonOrigin = `http://127.0.0.1:${internalPort}`;
 const allowedOrigins = new Set(

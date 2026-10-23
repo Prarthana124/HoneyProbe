@@ -309,6 +309,14 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
         self.assertEqual(event["ingestion_source"], "local_web_decoy")
         self.assertFalse(event["metadata"]["simulated"])
         self.assertEqual(event["target"], "/unmatched")
+        self.assertIn(event["source_address"], {"127.0.0.1", "::1"})
+        self.assertEqual(event["metadata"]["network"]["protocol"], "http")
+        self.assertEqual(event["metadata"]["network"]["method"], "GET")
+        self.assertEqual(event["metadata"]["network"]["path"], "/unmatched")
+        self.assertGreater(event["metadata"]["network"]["source_port"], 0)
+        self.assertGreater(event["metadata"]["network"]["destination_port"], 0)
+        self.assertTrue(event["metadata"]["network"]["user_agent"])
+        self.assertTrue(event["timestamp"])
         self.assertTrue(
             any(
                 item["category"] == "Path Traversal"
@@ -337,6 +345,10 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
         self.assertEqual(stored_event["id"], event_id)
         self.assertEqual(stored_event["target"], "/unmatched")
         self.assertFalse(stored_event["metadata"]["simulated"])
+        self.assertEqual(
+            stored_event["metadata"]["network"],
+            event["metadata"]["network"],
+        )
         status, stored_findings = self.request(
             "GET",
             f"/api/findings?event_id={event_id}&include_demo=true",

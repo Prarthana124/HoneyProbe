@@ -73,13 +73,13 @@ if ! phase4_console_dependencies_ready; then
 fi
 
 if ! (cd "$PHASE1_DIR" && uv run --no-sync --locked --project "$PHASE1_DIR" \
-  python -c 'import fastapi, httpx, uvicorn' >/dev/null 2>&1); then
+  python -c 'import os, sys, fastapi, httpx, uvicorn; expected = tuple(map(int, os.environ["UV_PYTHON"].split(".")[:2])); assert sys.version_info[:2] == expected' >/dev/null 2>&1); then
   echo "Installing the locked Phase 1 Python dependencies..."
   uv sync --locked --project "$PHASE1_DIR"
 fi
 
 if ! (cd "$PHASE1_DIR" && uv run --no-sync --locked --project "$PHASE1_DIR" \
-  python -c 'import fastapi, httpx, uvicorn' >/dev/null 2>&1); then
+  python -c 'import os, sys, fastapi, httpx, uvicorn; expected = tuple(map(int, os.environ["UV_PYTHON"].split(".")[:2])); assert sys.version_info[:2] == expected' >/dev/null 2>&1); then
   echo "Phase 1 Python dependencies are not ready with Python ${UV_PYTHON}." >&2
   exit 1
 fi

@@ -123,6 +123,8 @@ def record_web_interaction(
     *,
     simulated: bool = True,
     detection_input: str | None = None,
+    source_address: str | None = None,
+    network_metadata: dict[str, Any] | None = None,
 ) -> Event:
     request_path = interaction.route.split("?", 1)[0]
     if not request_path.startswith("/"):
@@ -158,7 +160,7 @@ def record_web_interaction(
             "source_type": "web",
             "event_type": interaction.interaction,
             "severity": severity,
-            "source_address": None,
+            "source_address": source_address,
             "target": path[:300],
             "session_id": interaction.session_id or f"web_{uuid.uuid4().hex[:16]}",
             "summary": summary,
@@ -168,6 +170,7 @@ def record_web_interaction(
                 "username": interaction.username,
                 "login_data_collected": False,
                 "simulated": simulated,
+                "network": network_metadata or {},
                 "phase2_analysis": [
                     {
                         "category": item["category"],
