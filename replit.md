@@ -11,6 +11,7 @@
 - The standalone Phase 2 server and Phase 4 API scaffold are not part of this integrated runtime.
 
 The launcher installs the locked Phase 1 and Phase 4 pnpm workspace dependencies when missing. It runs `uv sync --locked --project phases/phase1` if the Phase 1 Python environment is incomplete.
+The Replit Python module, Phase 1 Python requirement, and launcher `UV_PYTHON` are aligned on Python 3.13.
 This is the single supported startup path; it preserves the workspace and the existing SQLite database.
 
 ## Authentication and environment
@@ -81,18 +82,21 @@ Security scans are run through Replit's Security tools.
 
 ### Verification record
 
-- **2026-10-22:** Phase 1 API/integration tests: 15 passed, including a real loopback-decoy-to-finding-and-evidence flow surviving an API process restart; Phase 2 tests: 4 passed; Phase 3 tests: 16 passed.
-- Phase 1 workspace typecheck and Phase 4 console typecheck passed.
-- Phase 1 and Phase 4 production workspace builds passed; both printed a non-fatal source-map warning for a UI tooltip component.
-- Fresh dependency audit: 0 critical, 2 high, 2 moderate instances across the phase lockfiles; remaining findings are `braces@3.0.3` with no fix listed and `postcss-selector-parser@6.0.10`, whose available fix is a major version update. SAST: 0 findings. HoundDog: 0 findings.
-- Integrated Project workflow restarted; gateway health returned 200. FastAPI logs show the internal API bound to `127.0.0.1:8180`; the gateway does not proxy `/decoy`. The preview shows the intended authentication-setup screen because Clerk is not configured.
-- Protected gateway requests with forged operator headers returned 503 while Clerk is unavailable. Direct unauthorized dry-run requests are rejected by backend integration tests. Loopback web-decoy event, Phase 2 finding, evidence, and restart persistence are verified with isolated test databases.
-- A signed-in Clerk session and live authenticated browser dashboard remain blocked until Clerk is configured. No frontend test runner is configured. See the root `README.md` for commands and detailed results.
+- **2026-10-23:** Phase 1 API/integration tests: 15 passed; Phase 2 tests: 4 passed; Phase 3 tests: 16 passed; Phase 4 API-client tests: 4 passed.
+- Phase 1 and Phase 4 workspace typechecks and production builds passed. Phase 4 ESLint and JavaScript syntax checks passed. The UI builds emit a non-fatal source-map warning for a tooltip component.
+- Fresh security scans: 0 critical, 2 high and 2 moderate dependency findings across the phase workspaces; SAST: 0 findings; HoundDog: 0 findings. The two high instances are `braces@3.0.3` (CVE-2026-93687); npm has no compatible patched release. The two moderate instances are `postcss-selector-parser@6.0.10` (CVE-2026-104844); the available fix is version 7.1.6, a major-version update not applied without compatibility evidence.
+- The Replit Python module and Phase 1/launcher configuration now use Python 3.13. The combined HoneyProbe workflow restarted successfully; the gateway health check returned HTTP 200 and the internal API is bound to `127.0.0.1:8180`.
+- Forged operator headers do not unlock protected gateway routes: they return HTTP 503 while Clerk is unconfigured. The genuine preview shows the authentication-setup notice and a separate, labeled demo-preview option. No sign-in bypass was added.
+- Isolated API integration tests verified loopback decoy ingestion, detection, evidence linkage, duplicate handling, credential redaction, and records surviving a real API process restart. Those tests use temporary databases and do not alter the workspace's persisted SQLite data.
+- Authenticated Live verification remains blocked until the owner configures matching Clerk keys and a verified operator allowlist. See the root `README.md` for commands and prior verification context.
 
 ## Known limitations
 
 - No Clerk tenant/keys are configured yet; live console authorization requires the workspace owner to configure them and the verified operator allowlist.
-- The dependency audit still reports `braces@3.0.3` without a listed fixed version and `postcss-selector-parser@6.0.10`, whose available fix is a major version update. Do not force that update without compatibility testing.
+- Current event records retain source IP when the source provides it, but do not model source/destination ports, destination IP, protocol, user-agent, or ASN/geolocation enrichment.
+- The API self-test runner currently covers nine basic schema, storage, ingestion, route, query, export, detection, and Phase 3 dry-run checks; it is not yet the structured readiness/security/restart report described in the master completion prompt.
+- The adaptive-action endpoint records preview-only Phase 3 results but does not yet produce a recommendation linked to a specific finding and its evidence.
+- The dependency audit still reports `braces@3.0.3` without a compatible patched release and `postcss-selector-parser@6.0.10`, whose available fix is a major-version update. Do not force that update without compatibility testing.
 - The fictional web decoy is local-only and does not collect credentials or operate on host resources; the database decoy is a simulator and no SSH/Cowrie service starts. Mobile telemetry, threat-intelligence enrichment, and case-management integrations are absent.
 - Source profiles are aggregated from local events only; there is no external attribution.
 - Phase 3 only runs configured sample-target checks and dry-run previews. No automated production changes are performed.
