@@ -121,19 +121,23 @@ class HoneyProbeApiTests(unittest.TestCase):
         metrics_before = self.client.get(
             "/api/overview?include_demo=false"
         ).json()
-        ingested = self.client.post(
-            "/api/events",
-            json={
-                "source_type": "web",
-                "event_type": "operator_rule_probe",
-                "severity": "low",
-                "target": "/admin",
-                "summary": "Controlled event to verify dynamic rule detection",
-                "metadata": {"route": "/admin"},
-                "environment": "local",
-                "ingestion_source": "dynamic-rule-integration-test",
-            },
-        )
+        # Exercise live analytics with a local event. The rest of this suite
+        # uses the test runtime, which correctly labels every ingested event as
+        # test data and excludes it from the live overview.
+        with patch.dict(os.environ, {"HONEYPROBE_ENV": "development"}):
+            ingested = self.client.post(
+                "/api/events",
+                json={
+                    "source_type": "web",
+                    "event_type": "operator_rule_probe",
+                    "severity": "low",
+                    "target": "/admin",
+                    "summary": "Controlled event to verify dynamic rule detection",
+                    "metadata": {"route": "/admin"},
+                    "environment": "local",
+                    "ingestion_source": "dynamic-rule-integration-test",
+                },
+            )
         self.assertEqual(ingested.status_code, 201, ingested.text)
         event = ingested.json()
         metrics_after = self.client.get(
