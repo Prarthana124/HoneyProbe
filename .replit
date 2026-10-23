@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "python-base-3.13"]
+modules = ["nodejs-20", "python-3.12", "web"]
 
 [nix]
 channel = "stable-25_05"
@@ -33,10 +33,12 @@ outputType = "webview"
 [[ports]]
 localPort = 5000
 externalPort = 5000
+exposeLocalhost = true
 
 [[ports]]
 localPort = 8080
 externalPort = 80
+exposeLocalhost = true
 
 [[ports]]
 localPort = 8081
