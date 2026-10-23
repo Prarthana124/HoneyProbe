@@ -41,36 +41,36 @@
 }
 
 :root {
-  --background: 216 38% 8%;
-  --foreground: 210 30% 92%;
-  --border: 215 25% 20%;
-  --input: 215 26% 23%;
-  --ring: 198 88% 62%;
-  --card: 216 32% 11%;
-  --card-foreground: 210 30% 92%;
-  --card-border: 215 25% 20%;
-  --sidebar: 218 42% 7%;
-  --sidebar-foreground: 211 25% 76%;
-  --sidebar-border: 215 28% 16%;
-  --sidebar-primary: 198 88% 62%;
-  --sidebar-primary-foreground: 216 38% 8%;
-  --sidebar-accent: 216 29% 13%;
-  --sidebar-accent-foreground: 210 30% 94%;
-  --primary: 198 88% 62%;
-  --primary-foreground: 216 42% 8%;
-  --secondary: 215 25% 16%;
-  --secondary-foreground: 210 25% 88%;
-  --muted: 215 25% 15%;
-  --muted-foreground: 213 16% 62%;
-  --accent: 174 58% 58%;
-  --accent-foreground: 216 42% 8%;
-  --destructive: 0 68% 66%;
-  --destructive-foreground: 216 42% 8%;
+  --background: 216 46% 7%;
+  --foreground: 212 32% 91%;
+  --border: 213 34% 21%;
+  --input: 213 35% 23%;
+  --ring: 198 92% 62%;
+  --card: 214 43% 10%;
+  --card-foreground: 212 32% 91%;
+  --card-border: 213 34% 21%;
+  --sidebar: 216 52% 6%;
+  --sidebar-foreground: 211 27% 75%;
+  --sidebar-border: 213 35% 17%;
+  --sidebar-primary: 198 92% 62%;
+  --sidebar-primary-foreground: 216 46% 7%;
+  --sidebar-accent: 214 40% 13%;
+  --sidebar-accent-foreground: 212 32% 94%;
+  --primary: 198 92% 62%;
+  --primary-foreground: 216 46% 7%;
+  --secondary: 213 34% 16%;
+  --secondary-foreground: 212 28% 88%;
+  --muted: 213 36% 14%;
+  --muted-foreground: 213 17% 63%;
+  --accent: 165 57% 56%;
+  --accent-foreground: 216 46% 7%;
+  --destructive: 350 75% 65%;
+  --destructive-foreground: 216 46% 7%;
   --app-font-sans: 'Space Grotesk', sans-serif;
   --app-font-mono: 'IBM Plex Mono', monospace;
-  --radius: 0.65rem;
-  --elevate-1: rgba(129, 198, 225, 0.035);
-  --elevate-2: rgba(129, 198, 225, 0.07);
+  --radius: 0.45rem;
+  --elevate-1: rgba(115, 184, 218, 0.035);
+  --elevate-2: rgba(115, 184, 218, 0.07);
 }
 
 .dark { color-scheme: dark; }
@@ -78,7 +78,7 @@
 @layer base {
   * { @apply border-border; }
   html { min-width: 320px; background: hsl(var(--background)); }
-  body { @apply font-sans antialiased bg-background text-foreground; margin: 0; min-height: 100dvh; }
+  body { @apply font-sans antialiased bg-background text-foreground; margin: 0; min-height: 100dvh; letter-spacing: -0.008em; }
   button, input, select, textarea { font: inherit; }
   button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
@@ -93,8 +93,19 @@
 @keyframes pulse-dot { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 
 .grid-hairline {
-  background-color: hsl(var(--background));
+  background:
+    radial-gradient(ellipse at 85% 0%, hsl(211 62% 15% / .18), transparent 45%),
+    hsl(var(--background));
 }
+
+/* Dense instrument-panel surfaces: crisp borders, restrained depth, no decorative glare. */
+[data-testid^="panel-"], section.rounded-lg.border {
+  box-shadow: 0 1px 0 hsl(210 70% 90% / .025), 0 8px 22px hsl(220 70% 2% / .13);
+}
+
+table tbody tr { transition: background-color 140ms ease-out; }
+table tbody tr:hover { background-color: hsl(var(--primary) / .035); }
+input::placeholder, textarea::placeholder { opacity: .62; }
 
 button, a, input, select, textarea {
   transition-property: color, background-color, border-color, opacity, transform;
