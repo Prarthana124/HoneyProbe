@@ -77,35 +77,16 @@ For the phase entry points, API routes, storage details, and test locations, see
 
 ## Verification record
 
-Checks run on **2026-10-22**:
+The latest full verification and acceptance status is in the [HoneyProbe acceptance report](docs/HONEYPROBE_ACCEPTANCE_2026-10-23.md). It records the exact commands and counts, Python runtime identities, persistence/restart results, security findings, and environment blockers.
 
-| Check | Command | Result |
-|---|---|---|
-| Phase 1 API and integration tests | `cd phases/phase1/artifacts/api-server && HONEYPROBE_ENV=test PYTHONPATH=python uv run --project ../.. python -m unittest discover -s tests -v` | **PASS** — 15 tests, including a loopback decoy request creating a Phase 2 finding and linked evidence that survive a real API process restart, plus credential rejection and chunked request-size enforcement |
-| Phase 2 tests | `cd phases/phase2 && python -m unittest discover -s tests -v` | **PASS** — 4 tests |
-| Phase 3 tests | `cd phases/phase3 && PYTHONPATH=src python -m unittest discover -s tests -v` | **PASS** — 16 tests |
-| Phase 1 workspace typecheck | `cd phases/phase1 && pnpm run typecheck` | **PASS** |
-| Phase 4 console typecheck | `cd phases/phase4 && pnpm --filter @workspace/security-console run typecheck` | **PASS** |
-| Phase 1 workspace production build | `cd phases/phase1 && PORT=5000 BASE_PATH=/ HONEYPROBE_GATEWAY_PORT=8080 pnpm run build` | **PASS** — build completed; existing source-map warning in a UI tooltip component |
-| Phase 4 workspace production build | `cd phases/phase4 && PORT=5000 BASE_PATH=/ HONEYPROBE_GATEWAY_PORT=8080 pnpm run build` | **PASS** — build completed; same non-fatal source-map warning |
+Current decision: **CODE COMPLETE WITH ENVIRONMENT BLOCKERS**. The acceptance runner reports 14 PASS, 0 FAIL, 2 BLOCKED, and 0 SKIPPED. The blocks are Docker runtime verification (no reachable Docker daemon) and a signed-in Clerk Live session (the required Clerk keys and allowlist are not configured). The runner exits nonzero while these required checks remain blocked; it does not report a false pass.
 
-The integrated workflow restarted successfully. Gateway health returned HTTP 200. The web console is on port 5000, the gateway on internal port 8080, and FastAPI is bound to `127.0.0.1:8180`. The local `/decoy` path is not proxied by the gateway (404). With Clerk not configured, protected requests—including a forged operator-header request—return HTTP 503 `authentication_unavailable`; no authorization bypass was added. Backend integration tests separately confirm direct unauthorized dry-run requests return 403 and create no audit record.
+Run the full acceptance suite with:
 
-Security tools were rerun against the completed changes on the same date:
+```bash
+python scripts/self-test-honeyprobe.py
+```
 
-- Dependency audit: **0 critical, 2 high, 2 moderate** reported instances remain across the two phase lockfiles. The high findings are `braces@3.0.3` (no fix listed); the moderate findings are `postcss-selector-parser@6.0.10` (the listed fix is major version 7.1.6). No dependency was changed without compatibility verification.
-- Static analysis (SAST): **0 findings**.
-- Dataflow/privacy scan (HoundDog): **0 findings**.
-
-The Replit preview was visually checked after restart. It displays **Authentication setup required** and a clearly labeled demo-preview option. Clerk is not configured in this workspace; `/api/findings` returns HTTP 503, so a signed-in Live dashboard, real Clerk session authorization, and the matching finding rendered in the signed-in UI remain **blocked**. The Phase 4 API-client test suite covers real same-origin responses, HTTP errors, no demo fallback, and simulated-record labeling; it is not a substitute for the blocked authenticated browser workflow. Configure the matching Clerk development keys and verified operator allowlist before verifying signed-in Live records.
-
-## Verification refresh — 2026-10-23
-
-- **Combined startup: PASS.** The supported Project launcher checks Phase 4 dependencies, waits for gateway health, then starts the console. The root Replit Python runtime now matches Phase 1's Python 3.13 requirement; the launcher pins `uv` to 3.13. A standalone Uvicorn reload check and the combined gateway/console startup both passed. Keep the separate API artifact stopped because it binds the same gateway/internal ports, 8080/8180.
-- **Backend end-to-end and persistence: PASS.** A harmless loopback-only decoy visit produced event `evt_21e77453c75a4283845e6fe4e01b2194`, Path Traversal finding `finding_7f7eafaeda8b4368904ec8fe43bd0041`, and linked evidence `evidence_25601561d5d34edba5cbca961ac8fb3d`. In isolated SQLite file `/tmp/honeyprobe-final-loopback-9g0nxb9_/honeyprobe.sqlite3`, counts changed from 3 events / 0 findings / 3 evidence records to 4 / 1 / 4, then remained 4 / 1 / 4 after restarting the API process. The temporary database was removed after verification.
-- **Frontend and backend checks: PASS.** Phase 4 Node tests: 4/4; ESLint and test syntax check: pass; Phase 4 workspace typecheck and production build: pass. Phase 1 API integration suite: 15/15; Phase 1 workspace typecheck and Python compilation: pass. Phase 2 tests: 4/4; Phase 3 tests: 16/16. Launcher Bash syntax and `git diff --check`: pass. The production build retains a non-fatal source-map warning in the existing tooltip component.
-- **Authentication and Live dashboard: BLOCKED, fail-closed.** `/api/healthz` returned HTTP 200; unauthenticated `/api/findings` returned HTTP 503 `authentication_unavailable`. The genuine preview screenshot shows the authentication-setup-required state. Clerk management is not configured. Supply the actual development-instance `CLERK_SECRET_KEY` as a Replit Secret, and matching `CLERK_PUBLISHABLE_KEY` / `VITE_CLERK_PUBLISHABLE_KEY` values, plus a verified operator email in `HONEYPROBE_ALLOWED_EMAILS`. `VITE_CLERK_PROXY_URL` is optional. Do not use fabricated credentials or bypass auth. The signed-in Live browser workflow remains unverified until those settings exist.
-- **Dependency review: unresolved.** Each workspace audit reports one high `braces@3.0.3` advisory and one moderate `postcss-selector-parser@6.0.10` advisory. No compatible patched `braces` release is available; the selector-parser fix is major version 7.1.6 while the current typography plugin pins version 6.0.10. Neither was force-overridden.
-- No commit, push, public deployment, or new port mapping was made.
+The Project workflow is the supported runtime. Do not start the standalone Phase 1 or Phase 4 artifact workflows beside it because they can compete for ports.
 
 Do not publish this controlled-lab application without a separate network-isolation and access-control review. No deployment, push, or manual commit was performed. The workspace started on branch `main` aligned with `origin/main`; the current HoneyProbe changes are uncommitted. Confirm the repository state before release.

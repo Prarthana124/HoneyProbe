@@ -89,7 +89,12 @@ def add_result(
     RESULTS.append(result)
 
 
-def classify_command_result(return_code: int, output: str) -> tuple[str, str | None]:
+def classify_command_result(
+    return_code: int,
+    output: str,
+    *,
+    required: bool = True,
+) -> tuple[str, str | None]:
     if return_code != 0:
         return "FAIL", f"Command exited with status {return_code}."
 
@@ -101,7 +106,13 @@ def classify_command_result(return_code: int, output: str) -> tuple[str, str | N
         if (match := pattern.search(line.strip()))
     )
     if skipped:
-        return "BLOCKED", f"{skipped} tests were skipped; skipped suites are not counted as passing."
+        status = "BLOCKED" if required else "SKIPPED"
+        reason = (
+            "Required tests were skipped; the suite is not counted as passing."
+            if required
+            else "Optional tests were skipped."
+        )
+        return status, f"{skipped} {reason}"
 
     for line in output.splitlines():
         for pattern in TEST_COUNT_PATTERNS:
@@ -119,6 +130,7 @@ def run_command(
     *,
     cwd: Path = ROOT,
     env: dict[str, str] | None = None,
+    required: bool = True,
     timeout: int = 600,
 ) -> None:
     started = time.perf_counter()
@@ -158,7 +170,11 @@ def run_command(
         for line in clean_output.splitlines()
         if any(pattern.match(line.strip()) for pattern in SUMMARY_PATTERNS)
     ][-8:]
-    status, reason = classify_command_result(completed.returncode, clean_output)
+    status, reason = classify_command_result(
+        completed.returncode,
+        clean_output,
+        required=required,
+    )
     add_result(
         name,
         status,
@@ -171,6 +187,7 @@ def run_command(
 
 def runtime_readiness() -> None:
     started = time.perf_counter()
+    python_runtime: dict[str, str] | None = None
     commands = {
         "node": ["node", "--version"],
         "pnpm": ["pnpm", "--version"],
@@ -200,9 +217,10 @@ def runtime_readiness() -> None:
             str(ROOT / "phases/phase1"),
             "python",
             "-c",
-            "import sys, fastapi, httpx, uvicorn; "
-            "assert sys.version_info >= (3, 13); "
-            "print(sys.version.split()[0], fastapi.__version__)",
+            "import json, sys, fastapi, httpx, uvicorn; "
+            "assert sys.version_info[:2] == (3, 13); "
+            "print(json.dumps({'executable': sys.executable, "
+            "'version': sys.version.split()[0], 'fastapi': fastapi.__version__}))",
         ],
     }
     missing = [name for name, command in commands.items() if shutil.which(command[0]) is None]
@@ -229,8 +247,9 @@ def runtime_readiness() -> None:
                 command,
                 cwd=command_cwd,
                 env=TEST_ENV,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
                 timeout=60,
                 check=False,
             )
@@ -239,6 +258,16 @@ def runtime_readiness() -> None:
             continue
         if probe.returncode != 0:
             failures.append(name)
+        elif name == "python":
+            try:
+                parsed_runtime = json.loads(probe.stdout)
+                if isinstance(parsed_runtime, dict):
+                    python_runtime = {
+                        key: str(parsed_runtime[key])
+                        for key in ("executable", "version", "fastapi")
+                    }
+            except (json.JSONDecodeError, KeyError, TypeError):
+                failures.append("Python runtime identity")
     add_result(
         "Runtime and dependency readiness",
         "PASS" if not failures else "FAIL",
@@ -249,7 +278,15 @@ def runtime_readiness() -> None:
             if failures
             else [
                 "Node.js, pnpm, uv, backend and console JavaScript dependencies, "
-                "and Python 3.13 dependencies are available."
+                "and Python 3.13 dependencies are available.",
+                f"Self-test and Phase 2/3 interpreter: {sys.executable} "
+                f"(Python {sys.version.split()[0]}).",
+                "Phase 1 API interpreter: "
+                f"{python_runtime['executable']} "
+                f"(Python {python_runtime['version']}, "
+                f"FastAPI {python_runtime['fastapi']})."
+                if python_runtime
+                else "Phase 1 API interpreter identity could not be captured.",
             ]
         ),
     )
@@ -675,10 +712,18 @@ def main() -> int:
         cwd=ROOT / "phases/phase1",
     )
     run_command(
-        "Phase 1 API server production build",
-        ["pnpm", "--filter", "@workspace/api-server", "run", "build"],
+        "Phase 1 workspace production build",
+        [
+            "env",
+            "PORT=5000",
+            "BASE_PATH=/",
+            "HONEYPROBE_GATEWAY_PORT=8080",
+            "pnpm",
+            "run",
+            "build",
+        ],
         cwd=ROOT / "phases/phase1",
-        timeout=600,
+        timeout=900,
     )
     run_command(
         "Phase 4 console TypeScript typecheck",
@@ -691,20 +736,19 @@ def main() -> int:
         cwd=ROOT / "phases/phase4",
     )
     run_command(
-        "Phase 4 console production build",
+        "Phase 4 workspace production build",
         [
             "env",
             "PORT=5000",
             "BASE_PATH=/",
+            "HONEYPROBE_GATEWAY_PORT=8080",
             "NODE_ENV=production",
             "pnpm",
-            "--filter",
-            "@workspace/security-console",
             "run",
             "build",
         ],
         cwd=ROOT / "phases/phase4",
-        timeout=600,
+        timeout=900,
     )
     run_command(
         "Self-test runner PASS/FAIL/BLOCKED exit contract",
@@ -729,7 +773,7 @@ def main() -> int:
 
     counts = {
         status: sum(result["status"] == status for result in RESULTS)
-        for status in ("PASS", "FAIL", "BLOCKED")
+        for status in ("PASS", "FAIL", "BLOCKED", "SKIPPED")
     }
     overall = "FAIL" if counts["FAIL"] else "INCOMPLETE" if counts["BLOCKED"] else "PASS"
     print(json.dumps({"overall": overall, "counts": counts, "checks": RESULTS}, indent=2))

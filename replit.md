@@ -82,21 +82,21 @@ Security scans are run through Replit's Security tools.
 
 ### Verification record
 
-- **2026-10-23:** Phase 1 API/integration tests: 15 passed; Phase 2 tests: 4 passed; Phase 3 tests: 16 passed; Phase 4 API-client tests: 4 passed.
-- Phase 1 and Phase 4 workspace typechecks and production builds passed. Phase 4 ESLint and JavaScript syntax checks passed. The UI builds emit a non-fatal source-map warning for a tooltip component.
-- Fresh security scans: 0 critical, 2 high and 2 moderate dependency findings across the phase workspaces; SAST: 0 findings; HoundDog: 0 findings. The two high instances are `braces@3.0.3` (CVE-2026-93687); npm has no compatible patched release. The two moderate instances are `postcss-selector-parser@6.0.10` (CVE-2026-104844); the available fix is version 7.1.6, a major-version update not applied without compatibility evidence.
-- The Replit Python module and Phase 1/launcher configuration now use Python 3.13. The combined HoneyProbe workflow restarted successfully; the gateway health check returned HTTP 200 and the internal API is bound to `127.0.0.1:8180`.
-- Forged operator headers do not unlock protected gateway routes: they return HTTP 503 while Clerk is unconfigured. The genuine preview shows the authentication-setup notice and a separate, labeled demo-preview option. No sign-in bypass was added.
-- Isolated API integration tests verified loopback decoy ingestion, detection, evidence linkage, duplicate handling, credential redaction, and records surviving a real API process restart. Those tests use temporary databases and do not alter the workspace's persisted SQLite data.
-- Authenticated Live verification remains blocked until the owner configures matching Clerk keys and a verified operator allowlist. See the root `README.md` for commands and prior verification context.
+- The latest exact commands, test counts, runtime identities, scan results, and blockers are recorded in [`docs/HONEYPROBE_ACCEPTANCE_2026-10-23.md`](docs/HONEYPROBE_ACCEPTANCE_2026-10-23.md).
+- `python scripts/self-test-honeyprobe.py`: **14 PASS, 0 FAIL, 2 BLOCKED, 0 SKIPPED**. The two required environment checks remain blocked; the runner exits nonzero rather than presenting an incomplete run as a pass.
+- The Replit module, Phase 1 backend, locked `uv` environment, and root test process use Python **3.13.11**. The combined Project workflow restarted successfully, the Phase 1 API interpreter was checked in the running Uvicorn process, and gateway health returned HTTP 200.
+- Phase 1 backend/integration: 20 tests; trusted-proxy: 7; Phase 2: 4; Phase 3: 16; Phase 4 API client: 4; runner status contract: 14. Both workspace typechecks, lint, and production builds passed.
+- Fresh scans: **0 critical, 2 high, 0 moderate, 0 low** dependency findings; SAST: **0**; HoundDog: **0**. The unresolved high advisory is `braces@3.0.3`; details and affected dependency paths are in `docs/security-scan-results.md`.
+- The preview correctly shows the Clerk setup-required notice and labeled demo option. Protected routes fail closed; no authentication bypass was added.
+- Docker Compose configuration validation passed, but runtime/volume-restart verification is blocked because the Docker daemon is unreachable. Authenticated Live verification remains blocked until matching Clerk keys and a verified operator allowlist are configured.
 
 ## Known limitations
 
 - No Clerk tenant/keys are configured yet; live console authorization requires the workspace owner to configure them and the verified operator allowlist.
 - Current event records retain source IP when the source provides it, but do not model source/destination ports, destination IP, protocol, user-agent, or ASN/geolocation enrichment.
-- The API self-test runner currently covers nine basic schema, storage, ingestion, route, query, export, detection, and Phase 3 dry-run checks; it is not yet the structured readiness/security/restart report described in the master completion prompt.
+- The `/api/self-tests` endpoint is an in-process checklist; the root `scripts/self-test-honeyprobe.py` is the separate end-to-end acceptance runner for readiness, access control, backend and frontend suites, builds, restart persistence, and environment blockers.
 - Adaptive-action previews are tied to a non-test finding and its exact linked evidence, include the evidence digest in the recommendation, and persist in the audit log. They remain preview-only; no live apply route exists.
-- The dependency audit still reports `braces@3.0.3` without a compatible patched release and `postcss-selector-parser@6.0.10`, whose available fix is a major-version update. Do not force that update without compatibility testing.
+- The dependency audit still reports the high `braces@3.0.3` advisory with no fixed release listed. The latest scan reports no moderate `postcss-selector-parser` findings; see `docs/security-scan-results.md`.
 - The fictional web decoy is local-only and does not collect credentials or operate on host resources; the database decoy is a simulator and no SSH/Cowrie service starts. Mobile telemetry, threat-intelligence enrichment, and case-management integrations are absent.
 - Source profiles are aggregated from local events only; there is no external attribution.
 - Phase 3 only runs configured sample-target checks and dry-run previews. No automated production changes are performed.
