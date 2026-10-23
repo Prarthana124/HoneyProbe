@@ -592,13 +592,13 @@ export function LiveAdaptation() {
     (item) => item.id === selectedFindingId,
   );
   const linkedEvidence = useQuery({
-    queryKey: ['honeyprobe', 'adaptation-evidence', selectedFinding?.event_id],
+    queryKey: ['honeyprobe', 'adaptation-evidence', selectedFinding?.evidence_id],
     queryFn: () => {
       if (!selectedFinding) {
         throw new Error('Select a finding before loading linked evidence.');
       }
       return honeyProbeRequest<EvidenceRecord>(
-        `/api/evidence/${encodeURIComponent(selectedFinding.event_id)}`,
+        `/api/evidence/by-id/${encodeURIComponent(selectedFinding.evidence_id)}`,
       );
     },
     enabled: Boolean(selectedFinding),
@@ -699,14 +699,17 @@ export function LiveAdaptation() {
               <p className="mt-3 text-muted-foreground">Loading persisted linked evidence…</p>
             ) : evidenceMatchesFinding && linkedEvidence.data ? (
               <div className="mt-3 rounded-md border border-border bg-background/70 p-3">
-                <div className="font-medium">Persisted linked evidence</div>
+                <div className="font-medium">Persisted linked evidence · redacted view</div>
                 <p className="mono mt-1 break-all text-[10px] text-muted-foreground">
                   {linkedEvidence.data.id} · SHA-256 {linkedEvidence.data.sha256}
                 </p>
                 <p className="mt-2">{linkedEvidence.data.event.summary}</p>
                 <p className="mono mt-1 break-all text-[10px] text-muted-foreground">
-                  {linkedEvidence.data.event.source_type} · {linkedEvidence.data.event.target} · {formatDateTime(linkedEvidence.data.captured_at)}
+                  Event {linkedEvidence.data.event.id} · {linkedEvidence.data.event.source_type} · {linkedEvidence.data.event.target} · {formatDateTime(linkedEvidence.data.captured_at)}
                 </p>
+                <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/30 p-3 text-[10px] leading-5 text-muted-foreground" data-testid="evidence-payload">
+                  {JSON.stringify(linkedEvidence.data.event.metadata, null, 2)}
+                </pre>
               </div>
             ) : (
               <p className="mt-3 text-destructive">

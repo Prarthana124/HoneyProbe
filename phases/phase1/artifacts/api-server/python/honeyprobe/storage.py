@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS session_status (
 );
 CREATE TABLE IF NOT EXISTS self_test_results (
     name TEXT PRIMARY KEY,
-    status TEXT NOT NULL CHECK (status IN ('pass', 'fail', 'not_run')),
+    status TEXT NOT NULL CHECK (status IN ('pass', 'fail', 'blocked', 'not_run')),
     duration_ms INTEGER NOT NULL,
     last_run TEXT NOT NULL,
     diagnostic TEXT NOT NULL
@@ -182,6 +182,7 @@ def db_connection() -> Iterator[sqlite3.Connection]:
 def initialize_database() -> None:
     with db_connection() as connection:
         connection.executescript(SCHEMA)
+        _migrate_self_test_result_statuses(connection)
         marker = connection.execute(
             "SELECT value FROM app_meta WHERE key = 'first_run_seeded'"
         ).fetchone()
@@ -216,6 +217,38 @@ def initialize_database() -> None:
         for row in missing_evidence:
             _record_event_evidence(connection, event_from_row(row))
         _backfill_phase2_findings(connection)
+
+
+def _migrate_self_test_result_statuses(connection: sqlite3.Connection) -> None:
+    """Allow blocked results while preserving rows from pre-migration databases."""
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'self_test_results'"
+    ).fetchone()
+    table_sql = str(row["sql"] or "") if row is not None else ""
+    if "'blocked'" in table_sql:
+        return
+
+    connection.execute("BEGIN IMMEDIATE")
+    connection.execute("ALTER TABLE self_test_results RENAME TO self_test_results_legacy")
+    connection.execute(
+        """
+        CREATE TABLE self_test_results (
+            name TEXT PRIMARY KEY,
+            status TEXT NOT NULL CHECK (status IN ('pass', 'fail', 'blocked', 'not_run')),
+            duration_ms INTEGER NOT NULL,
+            last_run TEXT NOT NULL,
+            diagnostic TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO self_test_results(name, status, duration_ms, last_run, diagnostic)
+        SELECT name, status, duration_ms, last_run, diagnostic
+        FROM self_test_results_legacy
+        """
+    )
+    connection.execute("DROP TABLE self_test_results_legacy")
 
 
 def _backfill_phase2_findings(connection: sqlite3.Connection) -> None:
@@ -508,6 +541,7 @@ def get_detection_finding(finding_id: str) -> DetectionFinding | None:
 def query_evidence(
     *,
     event_id: str | None = None,
+    evidence_id: str | None = None,
     limit: int = 100,
     include_demo: bool = True,
 ) -> list[EvidenceRecord]:
@@ -516,6 +550,9 @@ def query_evidence(
     if event_id:
         clauses.append("events.id = ?")
         params.append(event_id)
+    if evidence_id:
+        clauses.append("evidence_records.id = ?")
+        params.append(evidence_id)
     if not include_demo:
         clauses.append("events.environment != 'test'")
     params.append(min(max(limit, 1), 500))

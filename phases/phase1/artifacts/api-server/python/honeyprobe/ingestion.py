@@ -31,7 +31,24 @@ SENSITIVE_KEYS = re.compile(
     r"(password|passwd|token|secret|authorization|cookie|credential|api.?key|private.?key)",
     re.IGNORECASE,
 )
+SENSITIVE_ASSIGNMENT = re.compile(
+    r"(?i)\b(?P<key>access[_-]?token|refresh[_-]?token|password|passwd|token|secret|"
+    r"credential|api[_-]?key|private[_-]?key|authorization)\b\s*[:=]\s*"
+    r"(?:bearer\s+)?(?:\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
+)
+SENSITIVE_COOKIE = re.compile(r"(?i)\b(?:cookie|set-cookie)\s*[:=][^\r\n]*")
+BEARER_VALUE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
+URL_CREDENTIALS = re.compile(r"(?i)\b(https?://)[^/\s:@]+:[^/\s@]+@")
 MAX_METADATA_BYTES = 8192
+
+
+def sanitize_sensitive_text(value: str) -> str:
+    value = SENSITIVE_COOKIE.sub("cookie=[redacted]", value)
+    value = SENSITIVE_ASSIGNMENT.sub(
+        lambda match: f"{match.group('key')}=[redacted]", value
+    )
+    value = BEARER_VALUE.sub("Bearer [redacted]", value)
+    return URL_CREDENTIALS.sub(r"\1[redacted]@", value)
 
 
 def runtime_event_environment() -> str:
@@ -59,7 +76,7 @@ def sanitize_metadata(value: Any, depth: int = 0) -> Any:
     if isinstance(value, list):
         return [sanitize_metadata(item, depth + 1) for item in value[:50]]
     if isinstance(value, str):
-        return value[:1000]
+        return sanitize_sensitive_text(value)[:1000]
     if value is None or isinstance(value, (bool, int, float)):
         return value
     return str(value)[:200]
@@ -83,6 +100,8 @@ def _persist(
         **values,
         "id": f"evt_{uuid.uuid4().hex}",
         "timestamp": iso_utc(timestamp),
+        "target": sanitize_sensitive_text(str(values["target"]))[:300],
+        "summary": sanitize_sensitive_text(str(values["summary"]))[:500],
         "metadata": metadata,
         "environment": environment or runtime_event_environment(),
         "ingestion_source": ingestion_source[:100],

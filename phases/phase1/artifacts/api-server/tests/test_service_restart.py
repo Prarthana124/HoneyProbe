@@ -165,6 +165,13 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(sql_finding["event_id"], cowrie_event["id"])
         self.assertTrue(sql_finding["evidence_id"].startswith("evidence_"))
+        status, evidence = self.request(
+            "GET", f"/api/evidence/by-id/{sql_finding['evidence_id']}"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(evidence["id"], sql_finding["evidence_id"])
+        self.assertEqual(evidence["event_id"], cowrie_event["id"])
+        self.assertTrue(evidence["redacted"])
 
         status, overview = self.request("GET", "/api/overview?include_demo=false")
         self.assertEqual(status, 200)
@@ -259,6 +266,16 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
             next(item for item in stored_findings if item["id"] == sql_finding["id"])[
                 "evidence_id"
             ],
+        )
+        status, stored_evidence_by_id = self.request(
+            "GET", f"/api/evidence/by-id/{sql_finding['evidence_id']}"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(stored_evidence_by_id["id"], evidence["id"])
+        self.assertEqual(stored_evidence_by_id["event_id"], cowrie_event["id"])
+        self.assertEqual(
+            stored_evidence_by_id["sha256"],
+            evidence["sha256"],
         )
         status, stored_audit = self.request("GET", "/api/adaptive-actions/audit")
         self.assertEqual(status, 200)
@@ -358,6 +375,13 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
         status, stored_evidence = self.request("GET", f"/api/evidence/{event_id}")
         self.assertEqual(status, 200)
         self.assertEqual(stored_evidence["sha256"], evidence["sha256"])
+        status, stored_evidence_by_id = self.request(
+            "GET", f"/api/evidence/by-id/{finding['evidence_id']}"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(stored_evidence_by_id["id"], evidence["id"])
+        self.assertEqual(stored_evidence_by_id["event_id"], event_id)
+        self.assertEqual(stored_evidence_by_id["sha256"], evidence["sha256"])
 
 
 if __name__ == "__main__":

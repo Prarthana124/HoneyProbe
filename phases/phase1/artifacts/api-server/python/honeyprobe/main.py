@@ -34,6 +34,8 @@ from honeyprobe.ingestion import (
     record_database_interaction,
     record_operator_event,
     record_web_interaction,
+    sanitize_metadata,
+    sanitize_sensitive_text,
 )
 from honeyprobe.models import (
     Analytics,
@@ -659,15 +661,51 @@ def list_evidence(
     include_demo: bool = False,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[EvidenceRecord]:
-    return query_evidence(event_id=event_id, limit=limit, include_demo=include_demo)
+    return [
+        _redact_evidence_record(record)
+        for record in query_evidence(
+            event_id=event_id,
+            limit=limit,
+            include_demo=include_demo,
+        )
+    ]
+
+
+@api.get("/evidence/by-id/{evidence_id}", response_model=EvidenceRecord)
+def evidence_by_id(evidence_id: str) -> EvidenceRecord:
+    records = query_evidence(evidence_id=evidence_id, limit=1, include_demo=False)
+    if not records:
+        raise HTTPException(status_code=404, detail="Evidence record not found.")
+    return _redact_evidence_record(records[0])
 
 
 @api.get("/evidence/{event_id}", response_model=EvidenceRecord)
-def event_evidence(event_id: str) -> EvidenceRecord:
-    records = query_evidence(event_id=event_id, limit=1)
+def event_evidence(event_id: str, include_demo: bool = False) -> EvidenceRecord:
+    records = query_evidence(
+        event_id=event_id,
+        limit=1,
+        include_demo=include_demo,
+    )
     if not records:
         raise HTTPException(status_code=404, detail="Evidence record not found.")
-    return records[0]
+    return _redact_evidence_record(records[0])
+
+
+def _redact_evidence_record(record: EvidenceRecord) -> EvidenceRecord:
+    """Return a redacted view without changing the digest of persisted evidence."""
+    event = record.event.model_copy(
+        update={
+            "target": sanitize_sensitive_text(record.event.target),
+            "summary": sanitize_sensitive_text(record.event.summary),
+            "session_id": (
+                sanitize_sensitive_text(record.event.session_id)
+                if record.event.session_id
+                else None
+            ),
+            "metadata": sanitize_metadata(record.event.metadata),
+        }
+    )
+    return record.model_copy(update={"event": event, "redacted": True})
 
 
 @api.get("/findings", response_model=list[DetectionFinding])
@@ -867,7 +905,12 @@ def adaptive_action_dry_run(
         include_demo=False,
     )
     evidence = next(
-        (record for record in evidence_records if record.id == finding.evidence_id),
+        (
+            record
+            for record in evidence_records
+            if record.id == finding.evidence_id
+            and record.event_id == finding.event_id
+        ),
         None,
     )
     if evidence is None:

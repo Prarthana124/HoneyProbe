@@ -21,6 +21,10 @@ from honeyprobe.storage import (
 from honeyprobe.web_decoy import ROUTES
 
 
+class SelfTestBlocked(RuntimeError):
+    """Raised when a check cannot run because a required component is unavailable."""
+
+
 def _event_schema_check() -> None:
     EventInput(
         source_type="web",
@@ -129,6 +133,9 @@ def run_self_tests() -> SelfTestRun:
             detail = check()
             if isinstance(detail, str) and detail:
                 diagnostic = detail
+        except SelfTestBlocked as error:
+            status = "blocked"
+            diagnostic = f"Check blocked: {type(error).__name__}"
         except Exception as error:  # A diagnostic should not expose request data or tracebacks.
             status = "fail"
             diagnostic = f"Check failed: {type(error).__name__}"
@@ -157,6 +164,7 @@ def run_self_tests() -> SelfTestRun:
         results=results,
         passed=sum(result.status == "pass" for result in results),
         failed=sum(result.status == "fail" for result in results),
+        blocked=sum(result.status == "blocked" for result in results),
         completed_at=started_at,
     )
 
@@ -169,7 +177,14 @@ def _validate_csv_output() -> None:
 
 
 def _phase2_detection_check() -> str:
-    matches = analyze_phase2_message("synthetic login failed test fixture")
+    try:
+        matches = analyze_phase2_message("synthetic login failed test fixture")
+    except (ImportError, ModuleNotFoundError, FileNotFoundError) as error:
+        raise SelfTestBlocked("Phase 2 detector is unavailable.") from error
+    except RuntimeError as error:
+        if "source is missing" in str(error) or "could not be loaded" in str(error):
+            raise SelfTestBlocked("Phase 2 detector is unavailable.") from error
+        raise
     if not any(item["category"] == "Brute Force" for item in matches):
         raise RuntimeError("Phase 2 did not match its expected test fixture")
     with db_connection() as connection:
@@ -206,8 +221,17 @@ def _phase2_detection_check() -> str:
 
 
 def _phase3_dry_run_check() -> str:
-    result = run_phase3_dry_run()
-    if result["total_tests"] == 0 or not result["healthy"]:
+    try:
+        result = run_phase3_dry_run()
+    except (ImportError, ModuleNotFoundError, FileNotFoundError) as error:
+        raise SelfTestBlocked("Phase 3 dry-run engine is unavailable.") from error
+    except RuntimeError as error:
+        if "source is missing" in str(error) or "policy is missing" in str(error):
+            raise SelfTestBlocked("Phase 3 dry-run engine or policy is unavailable.") from error
+        raise
+    if result["total_tests"] == 0:
+        raise SelfTestBlocked("Phase 3 has no configured targets to validate.")
+    if not result["healthy"]:
         raise RuntimeError("Phase 3 configured target checks did not pass")
     if result["applied_actions"] != 0:
         raise RuntimeError("Phase 3 dry run attempted to apply a change")

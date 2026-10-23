@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,9 @@ os.environ["HONEYPROBE_ENV"] = "test"
 
 from fastapi.testclient import TestClient  # noqa: E402
 from honeyprobe.main import app  # noqa: E402
+from honeyprobe.models import EvidenceRecord  # noqa: E402
+from honeyprobe.self_tests import SelfTestBlocked  # noqa: E402
+from honeyprobe.storage import db_connection, initialize_database  # noqa: E402
 
 
 class HoneyProbeApiTests(unittest.TestCase):
@@ -132,7 +136,7 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(len(findings.json()), 1)
         self.assertEqual(findings.json()[0]["rule_name"], "Path Traversal")
 
-        evidence = self.client.get(f"/api/evidence/{event_id}")
+        evidence = self.client.get(f"/api/evidence/{event_id}?include_demo=true")
         self.assertEqual(evidence.status_code, 200)
         self.assertEqual(findings.json()[0]["evidence_id"], evidence.json()["id"])
         self.assertNotIn("../../local-check", evidence.text)
@@ -186,6 +190,7 @@ class HoneyProbeApiTests(unittest.TestCase):
                     "visible": "kept",
                     "nested": {"access_token": "hidden", "count": 1},
                     "password": "hidden",
+                    "request_note": "Authorization: Bearer metadata-secret-marker",
                 },
                 "environment": "local",
                 "ingestion_source": "test",
@@ -197,6 +202,128 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(metadata["nested"], {"count": 1})
         self.assertNotIn("password", metadata)
         self.assertNotIn("access_token", json.dumps(metadata))
+        self.assertNotIn("metadata-secret-marker", json.dumps(metadata))
+
+    def test_evidence_lookup_is_exact_redacted_and_hides_test_records_by_default(self) -> None:
+        sensitive_markers = (
+            "target-secret-marker",
+            "summary-secret-marker",
+            "metadata-secret-marker",
+        )
+        with patch.dict(os.environ, {"HONEYPROBE_ENV": "development"}):
+            created = self.client.post(
+                "/api/events",
+                json={
+                    "source_type": "web",
+                    "event_type": "evidence_lookup_test",
+                    "severity": "medium",
+                    "target": f"/audit?access_token={sensitive_markers[0]}",
+                    "summary": f"Authorization: Bearer {sensitive_markers[1]}",
+                    "metadata": {
+                        "request_note": f"token={sensitive_markers[2]}",
+                        "visible": "retained",
+                    },
+                    "environment": "local",
+                    "ingestion_source": "evidence_lookup_test",
+                },
+            )
+        self.assertEqual(created.status_code, 201)
+        event = created.json()
+        self.assertTrue(all(marker not in created.text for marker in sensitive_markers))
+
+        evidence_list = self.client.get(
+            "/api/evidence",
+            params={"event_id": event["id"], "include_demo": "false"},
+        )
+        self.assertEqual(evidence_list.status_code, 200)
+        self.assertEqual(len(evidence_list.json()), 1)
+        evidence_id = evidence_list.json()[0]["id"]
+        evidence_response = self.client.get(
+            f"/api/evidence/by-id/{evidence_id}"
+        )
+        self.assertEqual(evidence_response.status_code, 200)
+        evidence = evidence_response.json()
+        self.assertTrue(evidence["redacted"])
+        self.assertEqual(evidence["id"], evidence_id)
+        self.assertEqual(evidence["event_id"], event["id"])
+        self.assertTrue(all(marker not in evidence_response.text for marker in sensitive_markers))
+        self.assertEqual(evidence["event"]["metadata"]["visible"], "retained")
+        self.assertEqual(
+            self.client.get("/api/evidence/by-id/evidence_missing").status_code,
+            404,
+        )
+
+        canonical_event = json.dumps(
+            evidence["event"],
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        self.assertEqual(
+            evidence["sha256"],
+            hashlib.sha256(canonical_event.encode("utf-8")).hexdigest(),
+        )
+
+        persisted = EvidenceRecord.model_validate(evidence)
+        legacy_event = persisted.event.model_copy(
+            update={
+                "summary": "password=legacy-summary-secret",
+                "target": "/legacy?token=legacy-target-secret",
+                "metadata": {
+                    "header": "Authorization: Bearer legacy-metadata-secret",
+                },
+            }
+        )
+        legacy_record = persisted.model_copy(update={"event": legacy_event})
+        with patch("honeyprobe.main.query_evidence", return_value=[legacy_record]):
+            legacy_response = self.client.get(
+                f"/api/evidence/by-id/{evidence_id}"
+            )
+        self.assertEqual(legacy_response.status_code, 200)
+        self.assertTrue(legacy_response.json()["redacted"])
+        for marker in (
+            "legacy-summary-secret",
+            "legacy-target-secret",
+            "legacy-metadata-secret",
+        ):
+            self.assertNotIn(marker, legacy_response.text)
+
+        with patch.dict(os.environ, {"HONEYPROBE_ENV": "test"}):
+            test_event_response = self.client.post(
+                "/api/events",
+                json={
+                    "source_type": "web",
+                    "event_type": "test_only_evidence_lookup",
+                    "severity": "info",
+                    "target": "/test-evidence",
+                    "summary": "Test-only evidence",
+                    "metadata": {},
+                    "environment": "test",
+                    "ingestion_source": "evidence_lookup_test",
+                },
+            )
+        self.assertEqual(test_event_response.status_code, 201)
+        test_event = test_event_response.json()
+        test_evidence = self.client.get(
+            "/api/evidence",
+            params={"event_id": test_event["id"], "include_demo": "true"},
+        ).json()[0]
+        self.assertEqual(
+            self.client.get(
+                f"/api/evidence/by-id/{test_evidence['id']}"
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(f"/api/evidence/{test_event['id']}").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(
+                f"/api/evidence/{test_event['id']}?include_demo=true"
+            ).status_code,
+            200,
+        )
 
     def test_invalid_event_payload_is_rejected_without_echoing_input(self) -> None:
         response = self.client.post(
@@ -303,7 +430,9 @@ class HoneyProbeApiTests(unittest.TestCase):
             {"SQL Injection", "Brute Force"},
         )
         self.assertTrue(all(finding["detector"] == "phase2" for finding in findings))
-        evidence = self.client.get(f"/api/evidence/{event['id']}").json()
+        evidence = self.client.get(
+            f"/api/evidence/{event['id']}?include_demo=true"
+        ).json()
         self.assertEqual(
             {finding["evidence_id"] for finding in findings},
             {evidence["id"]},
@@ -351,6 +480,7 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(test_run.status_code, 200)
         run_result = test_run.json()
         self.assertEqual(run_result["failed"], 0)
+        self.assertEqual(run_result["blocked"], 0)
         self.assertGreaterEqual(run_result["passed"], 9)
         self_test_names = {result["name"] for result in run_result["results"]}
         self.assertIn("Phase 2 detection adapter", self_test_names)
@@ -361,6 +491,72 @@ class HoneyProbeApiTests(unittest.TestCase):
             if result["name"] == "Phase 3 dry-run engine"
         )
         self.assertIn("none applied", phase3_result["diagnostic"])
+
+    def test_self_test_run_counts_blocked_prerequisites_separately(self) -> None:
+        with patch(
+            "honeyprobe.self_tests.run_phase3_dry_run",
+            side_effect=SelfTestBlocked("Phase 3 is unavailable."),
+        ):
+            response = self.client.post("/api/self-tests/run")
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertEqual(result["blocked"], 1)
+        self.assertEqual(
+            result["passed"] + result["failed"] + result["blocked"],
+            len(result["results"]),
+        )
+        phase3_result = next(
+            item for item in result["results"] if item["name"] == "Phase 3 dry-run engine"
+        )
+        self.assertEqual(phase3_result["status"], "blocked")
+
+    def test_self_test_status_schema_migration_preserves_existing_rows(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="honeyprobe-self-test-migration-") as temp:
+            database = Path(temp) / "legacy.sqlite3"
+            with sqlite3.connect(database) as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE self_test_results (
+                        name TEXT PRIMARY KEY,
+                        status TEXT NOT NULL CHECK (status IN ('pass', 'fail', 'not_run')),
+                        duration_ms INTEGER NOT NULL,
+                        last_run TEXT NOT NULL,
+                        diagnostic TEXT NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO self_test_results(name, status, duration_ms, last_run, diagnostic)
+                    VALUES ('existing check', 'pass', 4, '2026-10-23T00:00:00Z', 'preserved')
+                    """
+                )
+
+            with patch.dict(
+                os.environ,
+                {
+                    "HONEYPROBE_DB_PATH": str(database),
+                    "HONEYPROBE_ENV": "test",
+                },
+            ):
+                initialize_database()
+                with db_connection() as connection:
+                    existing = connection.execute(
+                        "SELECT * FROM self_test_results WHERE name = 'existing check'"
+                    ).fetchone()
+                    self.assertEqual(existing["status"], "pass")
+                    self.assertEqual(existing["diagnostic"], "preserved")
+                    connection.execute(
+                        """
+                        INSERT INTO self_test_results(
+                            name, status, duration_ms, last_run, diagnostic
+                        ) VALUES ('blocked check', 'blocked', 0, '2026-10-23T00:00:00Z', 'unavailable')
+                        """
+                    )
+                    blocked = connection.execute(
+                        "SELECT status FROM self_test_results WHERE name = 'blocked check'"
+                    ).fetchone()
+                    self.assertEqual(blocked["status"], "blocked")
 
     def test_demo_reset_only_removes_test_events(self) -> None:
         with patch.dict(os.environ, {"HONEYPROBE_ENV": "development"}):
@@ -419,7 +615,9 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertGreaterEqual(source["category_counts"].get("SQL Injection", 0), 1)
         self.assertFalse(source["includes_demo_data"])
 
-        evidence_response = self.client.get(f"/api/evidence/{event['id']}")
+        evidence_response = self.client.get(
+            f"/api/evidence/{event['id']}?include_demo=true"
+        )
         self.assertEqual(evidence_response.status_code, 200)
         evidence = evidence_response.json()
         canonical_event = json.dumps(
@@ -514,7 +712,9 @@ class HoneyProbeApiTests(unittest.TestCase):
 
         with TestClient(app) as restarted_client:
             persisted_event = restarted_client.get(f"/api/events/{event['id']}")
-            persisted_evidence = restarted_client.get(f"/api/evidence/{event['id']}")
+            persisted_evidence = restarted_client.get(
+                f"/api/evidence/{event['id']}?include_demo=true"
+            )
             persisted_report = restarted_client.get(f"/api/reports/{report['id']}")
             persisted_audit = restarted_client.get("/api/adaptive-actions/audit")
             verified_report = restarted_client.get(
@@ -591,6 +791,13 @@ class HoneyProbeApiTests(unittest.TestCase):
         test_finding = next(
             item for item in test_findings.json() if item["rule_name"] == "SQL Injection"
         )
+        linked_evidence_response = self.client.get(
+            f"/api/evidence/{real_event['id']}?include_demo=true"
+        )
+        self.assertEqual(linked_evidence_response.status_code, 200)
+        linked_evidence = EvidenceRecord.model_validate(
+            linked_evidence_response.json()
+        )
 
         def request_preview(finding_id: str):
             return self.client.post(
@@ -613,6 +820,24 @@ class HoneyProbeApiTests(unittest.TestCase):
             unlinked = request_preview(real_finding["id"])
         self.assertEqual(unlinked.status_code, 409)
         self.assertIn("linked evidence", unlinked.json()["detail"])
+
+        invalid_evidence_records = {
+            "wrong evidence ID": linked_evidence.model_copy(
+                update={"id": "evidence_not_linked"}
+            ),
+            "wrong event ID": linked_evidence.model_copy(
+                update={"event_id": "evt_unrelated"}
+            ),
+        }
+        for label, invalid_evidence in invalid_evidence_records.items():
+            with self.subTest(linked_evidence=label):
+                with patch(
+                    "honeyprobe.main.query_evidence",
+                    return_value=[invalid_evidence],
+                ):
+                    invalid = request_preview(real_finding["id"])
+                self.assertEqual(invalid.status_code, 409)
+                self.assertIn("linked evidence", invalid.json()["detail"])
 
         audit = self.client.get("/api/adaptive-actions/audit")
         self.assertEqual(audit.status_code, 200)

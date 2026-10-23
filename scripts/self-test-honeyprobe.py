@@ -48,9 +48,22 @@ for _key in (
 RESULTS: list[dict[str, Any]] = []
 SUMMARY_PATTERNS = (
     re.compile(r"^Ran \d+ tests? in [0-9.]+s$"),
-    re.compile(r"^(OK|FAILED \(.+\))$"),
+    re.compile(r"^(OK(?: \(skipped=\d+\))?|FAILED \(.+\))$"),
     re.compile(r"^ℹ (tests|pass|fail|skipped|duration_ms) .+$"),
+    re.compile(r"^# (tests|pass|fail|skipped|duration_ms) .+$"),
 )
+SKIPPED_PATTERNS = (
+    re.compile(r"^OK \(skipped=(\d+)\)$"),
+    re.compile(r"^ℹ skipped (\d+)$"),
+    re.compile(r"^# skipped (\d+)$"),
+    re.compile(r"\b(\d+) skipped\b"),
+)
+TEST_COUNT_PATTERNS = (
+    re.compile(r"^Ran (\d+) tests? in [0-9.]+s$"),
+    re.compile(r"^ℹ tests (\d+)$"),
+    re.compile(r"^# tests (\d+)$"),
+)
+ANSI_ESCAPE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
 
 def add_result(
@@ -74,6 +87,30 @@ def add_result(
     if summary:
         result["summary"] = summary
     RESULTS.append(result)
+
+
+def classify_command_result(return_code: int, output: str) -> tuple[str, str | None]:
+    if return_code != 0:
+        return "FAIL", f"Command exited with status {return_code}."
+
+    output = ANSI_ESCAPE.sub("", output)
+    skipped = sum(
+        int(match.group(1))
+        for line in output.splitlines()
+        for pattern in SKIPPED_PATTERNS
+        if (match := pattern.search(line.strip()))
+    )
+    if skipped:
+        return "BLOCKED", f"{skipped} tests were skipped; skipped suites are not counted as passing."
+
+    for line in output.splitlines():
+        for pattern in TEST_COUNT_PATTERNS:
+            match = pattern.match(line.strip())
+            if match and int(match.group(1)) == 0:
+                return "BLOCKED", "The test command executed zero tests."
+    if "no tests found" in output.lower():
+        return "BLOCKED", "The test command did not find any tests."
+    return "PASS", None
 
 
 def run_command(
@@ -115,21 +152,19 @@ def run_command(
         )
         return
 
+    clean_output = ANSI_ESCAPE.sub("", completed.stdout)
     summaries = [
         line.strip()
-        for line in completed.stdout.splitlines()
+        for line in clean_output.splitlines()
         if any(pattern.match(line.strip()) for pattern in SUMMARY_PATTERNS)
     ][-8:]
+    status, reason = classify_command_result(completed.returncode, clean_output)
     add_result(
         name,
-        "PASS" if completed.returncode == 0 else "FAIL",
+        status,
         started,
         command=command,
-        reason=(
-            None
-            if completed.returncode == 0
-            else f"Command exited with status {completed.returncode}."
-        ),
+        reason=reason,
         summary=summaries,
     )
 
@@ -235,6 +270,15 @@ def request_status(url: str) -> tuple[int, dict[str, Any] | None]:
         return response.status, payload if isinstance(payload, dict) else None
 
 
+def self_test_exit_code(counts: dict[str, int]) -> int:
+    """Required failures and blocked checks must never exit successfully."""
+    if counts.get("FAIL", 0):
+        return 1
+    if counts.get("BLOCKED", 0):
+        return 2
+    return 0
+
+
 def gateway_health_and_auth() -> None:
     started = time.perf_counter()
     port = os.environ.get("HONEYPROBE_GATEWAY_PORT", "8080")
@@ -245,6 +289,49 @@ def gateway_health_and_auth() -> None:
         protected_status, protected = request_status(
             f"http://127.0.0.1:{port}/api/findings"
         )
+        protected_routes = [
+            ("/api/evidence", "GET", None),
+            ("/api/evidence/by-id/evidence_self_test_missing", "GET", None),
+            ("/api/adaptive-actions/audit", "GET", None),
+            (
+                "/api/adaptive-actions/dry-run",
+                "POST",
+                {
+                    "action": "restrict_file_permissions",
+                    "finding_id": "self_test_missing",
+                    "reason": "Unauthenticated route protection check.",
+                },
+            ),
+        ]
+        route_results = []
+        for path, method, payload in protected_routes:
+            body = json.dumps(payload).encode("utf-8") if payload is not None else None
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}{path}",
+                data=body,
+                method=method,
+                headers={"Accept": "application/json", **(
+                    {"Content-Type": "application/json"} if body is not None else {}
+                )},
+            )
+            try:
+                response = urllib.request.urlopen(request, timeout=3)
+            except urllib.error.HTTPError as error:
+                response = error
+            with response:
+                body_text = response.read(64 * 1024).decode("utf-8", errors="replace")
+                try:
+                    payload_result = json.loads(body_text) if body_text else None
+                except json.JSONDecodeError:
+                    payload_result = None
+                route_results.append(
+                    (
+                        path,
+                        method,
+                        response.status,
+                        payload_result if isinstance(payload_result, dict) else None,
+                    )
+                )
     except (OSError, ValueError, TimeoutError) as error:
         add_result(
             "Running API health and unauthenticated access enforcement",
@@ -265,8 +352,17 @@ def gateway_health_and_auth() -> None:
         "access_check_unavailable",
     }:
         failures.append("protected endpoint returned an unexpected 503 response")
+    for path, _method, status, payload in route_results:
+        if status not in {401, 403, 503}:
+            failures.append(f"protected route {path} returned unexpected HTTP {status}")
+        if status == 503 and payload and payload.get("error") not in {
+            "authentication_unavailable",
+            "access_policy_unavailable",
+            "access_check_unavailable",
+        }:
+            failures.append(f"protected route {path} returned an unexpected 503 response")
     add_result(
-        "Running API health and unauthenticated access enforcement",
+        "Running API health and unauthenticated findings/evidence/audit enforcement",
         "PASS" if not failures else "FAIL",
         started,
         reason="; ".join(failures) if failures else None,
@@ -274,7 +370,8 @@ def gateway_health_and_auth() -> None:
             None
             if failures
             else [
-                f"Health HTTP {health_status}; unauthenticated protected route HTTP {protected_status}."
+                f"Health HTTP {health_status}; findings HTTP {protected_status}; "
+                f"{len(route_results)} evidence/audit/preview routes rejected unauthenticated requests."
             ]
         ),
     )
@@ -538,58 +635,21 @@ def main() -> int:
         "unittest",
     ]
     run_command(
-        "SQLite read/write and API retrieval",
+        "Complete Phase 1 backend, SQLite persistence, decoy/evidence, and process-restart suite",
         [
             *python_command,
-            "test_honeyprobe.HoneyProbeApiTests.test_health_and_sqlite_persistence",
+            "discover",
+            "-s",
+            "tests",
             "-v",
         ],
         cwd=API_DIR,
-    )
-    run_command(
-        "Local decoy, network metadata, and linked detection evidence",
-        [
-            *python_command,
-            "test_honeyprobe.HoneyProbeApiTests.test_loopback_web_decoy_records_real_visit_and_phase2_evidence",
-            "test_honeyprobe.HoneyProbeApiTests.test_local_decoy_metadata_redacts_credentials_from_user_agent",
-            "test_honeyprobe.HoneyProbeApiTests.test_loopback_web_decoy_login_never_accepts_or_persists_credentials",
-            "-v",
-        ],
-        cwd=API_DIR,
+        timeout=600,
     )
     run_command(
         "Trusted proxy IP/CIDR allowlist and header validation",
         ["node", "--test", "tests/trusted_proxy.test.mjs"],
         cwd=API_DIR,
-    )
-    run_command(
-        "Evidence-backed response preview, audit, Phase 2/3 self-tests, and API persistence",
-        [
-            *python_command,
-            "test_service_restart.ServiceRestartIntegrationTests.test_integrated_data_survives_a_real_api_process_restart",
-            "-v",
-        ],
-        cwd=API_DIR,
-        timeout=300,
-    )
-    run_command(
-        "Reject missing, test-only, and evidence-unlinked response findings",
-        [
-            *python_command,
-            "test_honeyprobe.HoneyProbeApiTests.test_adaptive_action_rejects_missing_test_only_and_unlinked_findings",
-            "-v",
-        ],
-        cwd=API_DIR,
-    )
-    run_command(
-        "Local decoy finding/evidence survives API process restart",
-        [
-            *python_command,
-            "test_service_restart.ServiceRestartIntegrationTests.test_local_decoy_finding_and_evidence_survive_a_real_process_restart",
-            "-v",
-        ],
-        cwd=API_DIR,
-        timeout=300,
     )
     run_command(
         "Phase 2 standalone test suite",
@@ -608,6 +668,48 @@ def main() -> int:
         "Phase 4 API client test suite",
         ["pnpm", "--filter", "@workspace/security-console", "run", "test"],
         cwd=ROOT / "phases/phase4",
+    )
+    run_command(
+        "Phase 1 configured workspace library and backend TypeScript typecheck",
+        ["pnpm", "run", "typecheck"],
+        cwd=ROOT / "phases/phase1",
+    )
+    run_command(
+        "Phase 1 API server production build",
+        ["pnpm", "--filter", "@workspace/api-server", "run", "build"],
+        cwd=ROOT / "phases/phase1",
+        timeout=600,
+    )
+    run_command(
+        "Phase 4 console TypeScript typecheck",
+        ["pnpm", "--filter", "@workspace/security-console", "run", "typecheck"],
+        cwd=ROOT / "phases/phase4",
+    )
+    run_command(
+        "Phase 4 console lint",
+        ["pnpm", "--filter", "@workspace/security-console", "run", "lint"],
+        cwd=ROOT / "phases/phase4",
+    )
+    run_command(
+        "Phase 4 console production build",
+        [
+            "env",
+            "PORT=5000",
+            "BASE_PATH=/",
+            "NODE_ENV=production",
+            "pnpm",
+            "--filter",
+            "@workspace/security-console",
+            "run",
+            "build",
+        ],
+        cwd=ROOT / "phases/phase4",
+        timeout=600,
+    )
+    run_command(
+        "Self-test runner PASS/FAIL/BLOCKED exit contract",
+        [sys.executable, "scripts/test_self_test_runner.py"],
+        cwd=ROOT,
     )
     run_command(
         "Docker Compose configuration validation",
@@ -631,7 +733,7 @@ def main() -> int:
     }
     overall = "FAIL" if counts["FAIL"] else "INCOMPLETE" if counts["BLOCKED"] else "PASS"
     print(json.dumps({"overall": overall, "counts": counts, "checks": RESULTS}, indent=2))
-    return 1 if counts["FAIL"] else 2 if counts["BLOCKED"] else 0
+    return self_test_exit_code(counts)
 
 
 if __name__ == "__main__":

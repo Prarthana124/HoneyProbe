@@ -198,6 +198,7 @@ class EvidenceRecord(StrictModel):
     previous_hash: str | None = None
     chain_hash: str
     event: Event
+    redacted: bool = False
 
 
 class DetectionFinding(StrictModel):
@@ -233,7 +234,7 @@ class AdaptiveActionAudit(StrictModel):
 
 class SelfTestResult(StrictModel):
     name: str
-    status: Literal["pass", "fail", "not_run"]
+    status: Literal["pass", "fail", "blocked", "not_run"]
     duration_ms: int
     last_run: datetime | None = None
     diagnostic: str
@@ -243,6 +244,7 @@ class SelfTestRun(StrictModel):
     results: list[SelfTestResult]
     passed: int
     failed: int
+    blocked: int
     completed_at: datetime
 
 

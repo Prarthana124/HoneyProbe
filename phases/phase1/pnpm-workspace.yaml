@@ -72,6 +72,7 @@ overrides:
   brace-expansion@5: 5.0.12
   fast-uri: 3.1.8
   markdown-it: 14.3.3
+  postcss-selector-parser: 7.1.7
   source-map-js: 1.2.2
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"

@@ -55,6 +55,7 @@ export type EvidenceRecord = {
   previous_hash: string | null;
   chain_hash: string;
   event: HoneyProbeEvent;
+  redacted: boolean;
 };
 
 export type DetectionFinding = {
@@ -70,7 +71,7 @@ export type DetectionFinding = {
 
 export type SelfTestResult = {
   name: string;
-  status: 'pass' | 'fail' | 'not_run';
+  status: 'pass' | 'fail' | 'blocked' | 'not_run';
   duration_ms: number;
   last_run: string | null;
   diagnostic: string;
