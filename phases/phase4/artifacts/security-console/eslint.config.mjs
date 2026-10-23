@@ -3,12 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: [
-      'dist/**',
-      'node_modules/**',
-      'src/components/ui/**',
-      'src/hooks/**',
-    ],
+    ignores: ['dist/**', 'node_modules/**'],
   },
   ...tseslint.configs.recommended,
   {
@@ -18,6 +13,18 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.flat.recommended.rules,
+    },
+  },
+  {
+    files: ['src/components/ui/carousel.tsx', 'src/hooks/use-mobile.tsx'],
+    rules: {
+      'react-hooks/set-state-in-effect': 'off',
+    },
+  },
+  {
+    files: ['src/components/ui/sidebar.tsx'],
+    rules: {
+      'react-hooks/purity': 'off',
     },
   },
 );
