@@ -554,6 +554,7 @@ export function LiveIncidents() {
   const [query, setQuery] = useState('');
   const [severity, setSeverity] = useState<'all' | Severity>('all');
   const [selected, setSelected] = useState<HoneyProbeEvent | null>(null);
+  const [selectedSourceAddress, setSelectedSourceAddress] = useState<string | null>(null);
   const events = useQuery({
     queryKey: ['honeyprobe', 'events', 'incidents'],
     queryFn: () =>
@@ -572,6 +573,9 @@ export function LiveIncidents() {
         return text.includes(query.toLowerCase()) && (severity === 'all' || event.severity === severity);
       }),
     [events.data?.items, query, severity],
+  );
+  const selectedProfile = profiles.data?.find(
+    (profile) => profile.source_address === selectedSourceAddress,
   );
 
   return (
@@ -636,7 +640,20 @@ export function LiveIncidents() {
             <tbody className="divide-y divide-border/70">
               {(profiles.data ?? []).map((profile) => (
                 <tr key={profile.source_address}>
-                  <td className="px-4 py-4 mono text-xs">{profile.source_address}</td>
+                  <td className="px-4 py-4 mono text-xs">
+                    <button
+                      type="button"
+                      className="text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      aria-pressed={selectedSourceAddress === profile.source_address}
+                      onClick={() =>
+                        setSelectedSourceAddress((current) =>
+                          current === profile.source_address ? null : profile.source_address,
+                        )
+                      }
+                    >
+                      {profile.source_address}
+                    </button>
+                  </td>
                   <td className="px-4 py-4 text-xs">{profile.event_count} / {profile.session_count}</td>
                   <td className="px-4 py-4"><StatusPill value={profile.highest_severity.toUpperCase()} /></td>
                   <td className="max-w-sm px-4 py-4 text-xs text-muted-foreground">
@@ -651,6 +668,76 @@ export function LiveIncidents() {
             <div className="p-6 text-center text-xs text-muted-foreground">No source profiles are available yet.</div>
           )}
         </div>
+        {selectedProfile && (
+          <div className="border-t border-border p-5" data-testid="panel-source-timeline">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">Observed behavior timeline</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {selectedProfile.source_address} · latest {selectedProfile.timeline.length} events
+                </p>
+              </div>
+              <span className="rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-[10px] text-primary">
+                Category indicators only
+              </span>
+            </div>
+            {selectedProfile.timeline.length > 0 ? (
+              <ol className="mt-4 space-y-3">
+                {selectedProfile.timeline.map((activity) => (
+                  <li
+                    key={activity.event_id}
+                    className="rounded-lg border border-border bg-muted/20 p-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill value={activity.severity.toUpperCase()} />
+                        <span className="text-xs font-medium">{activity.event_type}</span>
+                        <span className="text-[10px] uppercase text-muted-foreground">
+                          {activity.source_type}
+                        </span>
+                        {activity.simulated && (
+                          <span className="rounded border border-accent/30 px-1.5 py-0.5 text-[9px] text-accent">
+                            SIMULATED
+                          </span>
+                        )}
+                      </div>
+                      <time className="text-[10px] text-muted-foreground">
+                        {formatDateTime(activity.timestamp)}
+                      </time>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {activity.indicators.length > 0 ? (
+                        activity.indicators.map((indicator) => (
+                          <span
+                            key={indicator}
+                            className="rounded-full border border-border px-2 py-1 text-[10px] text-muted-foreground"
+                          >
+                            {indicator}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">
+                          No detection indicator matched
+                        </span>
+                      )}
+                    </div>
+                    <p className="mono mt-2 text-[10px] text-muted-foreground">
+                      Event {activity.event_id}
+                      {activity.session_id ? ` · Session ${activity.session_id}` : ''}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="mt-4 text-xs text-muted-foreground">
+                No recent events are available for this source.
+              </p>
+            )}
+            <p className="mt-3 text-[10px] text-muted-foreground">
+              This view stores and displays event categories only; it does not collect credentials or raw commands.
+            </p>
+          </div>
+        )}
       </Panel>
 
       {selected && (

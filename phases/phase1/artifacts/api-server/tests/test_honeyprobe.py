@@ -710,6 +710,10 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(source["event_count"], 1)
         self.assertGreaterEqual(source["category_counts"].get("SQL Injection", 0), 1)
         self.assertFalse(source["includes_demo_data"])
+        self.assertEqual(len(source["timeline"]), 1)
+        self.assertEqual(source["timeline"][0]["event_id"], event["id"])
+        self.assertIn("SQL Injection", source["timeline"][0]["indicators"])
+        self.assertNotIn("UNION SELECT", json.dumps(source["timeline"]))
 
         evidence_response = self.client.get(
             f"/api/evidence/{event['id']}?include_demo=true"

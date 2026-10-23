@@ -197,6 +197,17 @@ class Analytics(StrictModel):
     top_routes: list[dict[str, Any]]
 
 
+class SourceProfileActivity(StrictModel):
+    event_id: str
+    timestamp: datetime
+    event_type: str = Field(min_length=1, max_length=100)
+    source_type: Literal["web", "ssh", "database", "mobile"]
+    severity: Literal["info", "low", "medium", "high", "critical"]
+    session_id: str | None = Field(default=None, max_length=128)
+    indicators: list[str] = Field(default_factory=list, max_length=12)
+    simulated: bool
+
+
 class SourceProfile(StrictModel):
     source_address: str
     event_count: int
@@ -207,6 +218,7 @@ class SourceProfile(StrictModel):
     category_counts: dict[str, int]
     includes_demo_data: bool
     simulated_events: int
+    timeline: list[SourceProfileActivity] = Field(max_length=12)
 
 
 class EvidenceRecord(StrictModel):

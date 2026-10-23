@@ -14,6 +14,7 @@ from honeyprobe.models import (
     ReportSummary,
     Session,
     SourceProfile,
+    SourceProfileActivity,
 )
 from honeyprobe.storage import get_investigation_status, utc_now
 
@@ -62,6 +63,12 @@ def make_source_profiles(events: list[Event], *, limit: int = 100) -> list[Sourc
     profiles: list[SourceProfile] = []
     for address, source_events in grouped.items():
         categories: Counter[str] = Counter()
+        timeline: list[SourceProfileActivity] = []
+        recent_events = sorted(
+            source_events,
+            key=lambda event: event.timestamp,
+            reverse=True,
+        )[:12]
         for event in source_events:
             categories[event.event_type] += 1
             detections = event.metadata.get("phase2_analysis", [])
@@ -69,6 +76,37 @@ def make_source_profiles(events: list[Event], *, limit: int = 100) -> list[Sourc
                 for detection in detections:
                     if isinstance(detection, dict) and isinstance(detection.get("category"), str):
                         categories[detection["category"]] += 1
+        for event in recent_events:
+            detections = event.metadata.get("phase2_analysis", [])
+            indicators = (
+                sorted(
+                    {
+                        detection["category"][:80]
+                        for detection in detections
+                        if isinstance(detection, dict)
+                        and isinstance(detection.get("category"), str)
+                        and detection["category"].strip()
+                    }
+                )
+                if isinstance(detections, list)
+                else []
+            )
+            timeline.append(
+                SourceProfileActivity(
+                    event_id=event.id,
+                    timestamp=event.timestamp,
+                    event_type=event.event_type,
+                    source_type=event.source_type,
+                    severity=event.severity,
+                    session_id=event.session_id,
+                    indicators=indicators[:12],
+                    simulated=(
+                        event.environment == "test"
+                        or bool(event.metadata.get("simulated"))
+                        or bool(event.metadata.get("demo"))
+                    ),
+                )
+            )
         timestamps = [event.timestamp for event in source_events]
         highest = max(
             source_events,
@@ -92,6 +130,7 @@ def make_source_profiles(events: list[Event], *, limit: int = 100) -> list[Sourc
                     or bool(event.metadata.get("demo"))
                     for event in source_events
                 ),
+                timeline=timeline,
             )
         )
     profiles.sort(key=lambda profile: (profile.event_count, profile.last_seen), reverse=True)

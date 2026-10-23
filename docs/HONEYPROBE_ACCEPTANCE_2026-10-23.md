@@ -11,7 +11,7 @@ The Replit runtime was aligned with the Phase 1 Python requirement. The combined
 The acceptance runner reported **14 PASS, 0 FAIL, 2 BLOCKED, 0 SKIPPED** and exited with status `2` because two required environment checks could not be completed:
 
 1. Docker CLI is installed, but its daemon is unreachable, so Compose health and persistent-volume restart could not run.
-2. Clerk keys and the verified operator allowlist are not configured, so a real signed-in Live session could not be tested. The app correctly keeps protected routes locked.
+2. The Replit-managed Clerk tenant and server/browser keys are provisioned, but the verified operator allowlist is not configured, so a real signed-in Live session could not be tested. Anonymous access is rejected with HTTP 401.
 
 These are environment blockers, not passed checks. The final result is therefore not `VERIFIED COMPLETE`.
 
@@ -66,8 +66,8 @@ The separate restart integration test also verifies authenticated-route behavior
 
 - The supported `HoneyProbe app` Project workflow restarted and is running on port `5000`.
 - `GET /api/healthz`: **HTTP 200**, `{"status":"healthy"}`.
-- The preview shows the protected operator landing page with **Sign in**, **Create account**, and **Open demo preview**. Clerk development keys load; the browser reports only Clerk's standard development-key notice.
-- The Replit-managed Clerk tenant and keys are provisioned. `HONEYPROBE_ALLOWED_EMAILS` is still unset, so the signed-in operator dashboard has not been verified. Authentication remains enforced; no bypass was added.
+- The preview shows the protected operator landing page with **Sign in**, **Create account**, and **Open demo preview**. The Replit-managed Clerk development keys load; the browser reports only Clerk's standard development-key notice.
+- `HONEYPROBE_ALLOWED_EMAILS` is still unset, so the signed-in operator dashboard has not been verified. Authentication remains enforced; no bypass was added.
 
 ## Security scan and remaining risk
 
@@ -86,7 +86,7 @@ The prior `postcss-selector-parser` advisory is no longer reported by the latest
 ## Environment blockers and follow-up needed
 
 - **Docker runtime — BLOCKED:** `docker --version` succeeds, but `docker info` cannot connect to a Docker daemon. Compose configuration parses successfully; image build, health checks, and persistent-volume restart were not run.
-- **Clerk Live session — BLOCKED:** the Replit-managed tenant is ready, but a verified operator email must be added to `HONEYPROBE_ALLOWED_EMAILS`; the headless runner cannot create that signed-in session.
+- **Clerk Live session — BLOCKED:** the Replit-managed tenant and keys are ready, but a verified operator email must be added to `HONEYPROBE_ALLOWED_EMAILS`; the headless runner cannot create that signed-in session.
 
 ## Security Console artifact workflow recovery
 
@@ -101,5 +101,6 @@ The console package now declares TypeScript directly so its `typecheck` command 
 - `scripts/test_self_test_runner.py` — cover required/optional skip classification and exit behavior.
 - `README.md` and `replit.md` — replace stale verification claims with the current outcome and report link.
 - `docs/HONEYPROBE_ACCEPTANCE_2026-10-23.md` — current acceptance results and blockers.
+- `phases/phase1/artifacts/api-server/python/honeyprobe/models.py`, `analytics.py`, the Phase 1 backend tests, and the Phase 4 API/UI types and incident page — recent source activity timelines with category indicators only.
 
 Controlled SSH/mobile event simulators, database Phase 2 findings, a simulation-only readiness assessment, dashboard scenario controls, and related tests were added. The existing persistent database was preserved. No deploy, push, or commit was performed. Security scanners were not rerun for this feature batch; the scan results above remain the earlier recorded results.

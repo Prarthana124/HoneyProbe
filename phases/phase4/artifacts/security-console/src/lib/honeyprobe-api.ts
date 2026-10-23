@@ -45,6 +45,18 @@ export type SourceProfile = {
   category_counts: Record<string, number>;
   includes_demo_data: boolean;
   simulated_events: number;
+  timeline: SourceProfileActivity[];
+};
+
+export type SourceProfileActivity = {
+  event_id: string;
+  timestamp: string;
+  event_type: string;
+  source_type: 'web' | 'ssh' | 'database' | 'mobile';
+  severity: Severity;
+  session_id: string | null;
+  indicators: string[];
+  simulated: boolean;
 };
 
 export type EvidenceRecord = {
