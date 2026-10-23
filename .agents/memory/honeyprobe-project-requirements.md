@@ -21,4 +21,4 @@ The root Replit Python module must meet the backend's minimum Python version, an
 
 **Why:** the root workflow originally combined a Python 3.14 virtual environment with a Python 3.12 wrapper, which broke Uvicorn's reload child. Aligning the Replit module and `UV_PYTHON` to Python 3.13 fixed reload and combined startup.
 
-**How to apply:** before changing backend dependencies, compare the root Replit runtime, `pyproject.toml`'s Python requirement, and `.pythonlibs/pyvenv.cfg`; pin `UV_PYTHON` to the installed compatible minor and resync with the locked `uv` project. Keep the standalone API workflow stopped while the combined Project workflow runs.
+**How to apply:** before changing backend dependencies, compare the root Replit runtime, `pyproject.toml`'s Python requirement, and `.pythonlibs/pyvenv.cfg`; pin `UV_PYTHON` to the installed compatible minor and resync with the locked `uv` project. This workspace exposes Python 3.13 as the Replit module ID `python-base-3.13` (not `python-3.13`). Keep the standalone API workflow stopped while the combined Project workflow runs.
