@@ -11,7 +11,7 @@ The Replit runtime was aligned with the Phase 1 Python requirement. The combined
 The acceptance runner reported **14 PASS, 0 FAIL, 2 BLOCKED, 0 SKIPPED** and exited with status `2` because two required environment checks could not be completed:
 
 1. Docker CLI is installed, but its daemon is unreachable, so Compose health and persistent-volume restart could not run.
-2. The Replit-managed Clerk tenant and server/browser keys are provisioned, but the verified operator allowlist is not configured, so a real signed-in Live session could not be tested. Anonymous access is rejected with HTTP 401.
+2. The Replit-managed Clerk tenant, server/browser keys, and development operator allowlist are configured. The headless runner cannot create a signed-in browser session; anonymous access is rejected with HTTP 401.
 
 These are environment blockers, not passed checks. The final result is therefore not `VERIFIED COMPLETE`.
 
@@ -47,7 +47,7 @@ python scripts/self-test-honeyprobe.py
 | Compose configuration | `docker compose config --quiet` | **PASS** |
 | Shell/patch hygiene | `git diff --check` | **PASS** |
 
-That is **68 passing test cases** across the six test suites. The full acceptance runner reports **14 PASS, 0 FAIL, 2 BLOCKED, 0 SKIPPED**. The blockers are the unavailable Docker daemon and the unconfigured verified-operator email allowlist needed for a signed-in Clerk session. No required test was skipped or discovered as zero tests. Failed commands are classified `FAIL`; missing executables and required unavailable checks are not classified as `PASS`.
+That is **68 passing test cases** across the six test suites. The full acceptance runner reports **14 PASS, 0 FAIL, 2 BLOCKED, 0 SKIPPED**. The blockers are the unavailable Docker daemon and the headless runner's inability to create a signed-in Clerk browser session. No required test was skipped or discovered as zero tests. Failed commands are classified `FAIL`; missing executables and required unavailable checks are not classified as `PASS`.
 
 ## Persisted end-to-end workflow
 
@@ -67,7 +67,7 @@ The separate restart integration test also verifies authenticated-route behavior
 - The supported `HoneyProbe app` Project workflow restarted and is running on port `5000`.
 - `GET /api/healthz`: **HTTP 200**, `{"status":"healthy"}`.
 - The preview shows the protected operator landing page with **Sign in**, **Create account**, and **Open demo preview**. The Replit-managed Clerk development keys load; the browser reports only Clerk's standard development-key notice.
-- `HONEYPROBE_ALLOWED_EMAILS` is still unset, so the signed-in operator dashboard has not been verified. Authentication remains enforced; no bypass was added.
+- The development operator allowlist is configured. The running workflow recorded successful authorized requests for the overview, events, source profiles, findings, evidence, assessment, reports, and self-test APIs. The screenshot browser is unsigned, so the signed-in dashboard was not visually verified. Authentication remains enforced; no bypass was added.
 
 ## Security scan and remaining risk
 
@@ -86,7 +86,7 @@ The prior `postcss-selector-parser` advisory is no longer reported by the latest
 ## Environment blockers and follow-up needed
 
 - **Docker runtime — BLOCKED:** `docker --version` succeeds, but `docker info` cannot connect to a Docker daemon. Compose configuration parses successfully; image build, health checks, and persistent-volume restart were not run.
-- **Clerk Live session — BLOCKED:** the Replit-managed tenant and keys are ready, but a verified operator email must be added to `HONEYPROBE_ALLOWED_EMAILS`; the headless runner cannot create that signed-in session.
+- **Clerk Live session — BLOCKED:** the Replit-managed tenant, keys, and development allowlist are configured. The headless runner cannot create the signed-in browser session; manual UI verification remains.
 
 ## Security Console artifact workflow recovery
 

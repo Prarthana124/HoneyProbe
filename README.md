@@ -40,7 +40,7 @@ Use the single Project workflow for the integrated runtime. The separate Phase 4
 
 Protected live API routes require a Clerk session and a verified email address on the server-side operator allowlist. Missing or incomplete configuration fails closed; there is no unauthenticated development bypass.
 
-For development, supply matching test/development credentials from the same Clerk instance: `CLERK_SECRET_KEY` for the server, `CLERK_PUBLISHABLE_KEY` for the server, and the same publishable key as `VITE_CLERK_PUBLISHABLE_KEY` for the browser. Add `HONEYPROBE_ALLOWED_EMAILS` as a comma-separated list of verified operator email addresses. Keep the secret key in Replit Secrets; set the publishable key and allowlist in the workspace's development environment settings. `VITE_CLERK_PROXY_URL` is optional. These values must come from the project owner's configured Clerk instance; do not paste credentials into chat or source files. A Replit-managed development Clerk tenant and server/browser keys have been provisioned for this workspace; authenticated Live verification still requires a verified operator email in `HONEYPROBE_ALLOWED_EMAILS`.
+For development, supply matching test/development credentials from the same Clerk instance: `CLERK_SECRET_KEY` for the server, `CLERK_PUBLISHABLE_KEY` for the server, and the same publishable key as `VITE_CLERK_PUBLISHABLE_KEY` for the browser. Add `HONEYPROBE_ALLOWED_EMAILS` as a comma-separated list of verified operator email addresses. Keep the secret key in Replit Secrets; set the publishable key and allowlist in the workspace's development environment settings. `VITE_CLERK_PROXY_URL` is optional. These values must come from the project owner's configured Clerk instance; do not paste credentials into chat or source files. This workspace has a Replit-managed development Clerk tenant, server/browser keys, and a development operator allowlist configured. The headless acceptance runner cannot create a signed-in browser session.
 
 Configure these in Replit Secrets/environment settings. Never put their values in source control:
 
@@ -79,7 +79,7 @@ For the phase entry points, API routes, storage details, and test locations, see
 
 The latest full verification and acceptance status is in the [HoneyProbe acceptance report](docs/HONEYPROBE_ACCEPTANCE_2026-10-23.md). It records the exact commands and counts, Python runtime identities, persistence/restart results, security findings, and environment blockers.
 
-Current decision: **CODE COMPLETE WITH ENVIRONMENT BLOCKERS**. The acceptance runner reports 14 PASS, 0 FAIL, 2 BLOCKED, and 0 SKIPPED. The blocks are Docker runtime verification (no reachable Docker daemon) and a signed-in Clerk Live session (the required Clerk keys and allowlist are not configured). The runner exits nonzero while these required checks remain blocked; it does not report a false pass.
+Current decision: **CODE COMPLETE WITH VERIFICATION BLOCKERS**. The acceptance runner reports 14 PASS, 0 FAIL, 2 BLOCKED, and 0 SKIPPED. The blocks are Docker runtime verification (no reachable Docker daemon) and the headless runner's inability to create a signed-in Clerk browser session. Clerk is configured in development; sign in with an allowlisted verified operator account to view live data. The runner exits nonzero while these required checks remain blocked; it does not report a false pass.
 
 Run the full acceptance suite with:
 

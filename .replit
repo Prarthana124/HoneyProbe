@@ -49,3 +49,8 @@ externalPort = 3000
 [[ports]]
 localPort = 23159
 externalPort = 3002
+
+[userenv]
+
+[userenv.development]
+HONEYPROBE_ALLOWED_EMAILS = "pprarthana164@gmail.com"

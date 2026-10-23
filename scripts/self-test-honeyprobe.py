@@ -766,8 +766,8 @@ def main() -> int:
         "BLOCKED",
         time.perf_counter(),
         reason=(
-            "This headless runner cannot create a verified operator session. "
-            "Configure matching Clerk keys and the verified-email allowlist, then verify the signed-in browser flow."
+            "This headless runner cannot create a signed-in browser session. "
+            "Verify the live dashboard manually with an allowlisted, verified operator account."
         ),
     )
 

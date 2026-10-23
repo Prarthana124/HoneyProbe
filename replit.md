@@ -37,7 +37,7 @@ Optional/runtime variables:
 - `VITE_CLERK_PROXY_URL` is platform-managed for production; do not hardcode a proxy path.
 - The launcher manages console `PORT` (`5000`) and `BASE_PATH` (`/`); do not override them for the normal workflow.
 
-Clerk is currently not configured in this imported workspace. The console shows a setup notice until authentication is configured; live data remains locked. The explicit Phase 4 demo preview can still be viewed and remains labeled as static demo data. API failures never fall back to demo data.
+The Replit-managed Clerk development tenant, keys, and operator allowlist are configured in this workspace. Sign in with the allowlisted verified operator account to access live data. The explicit Phase 4 demo preview remains clearly labeled static sample data; API failures never fall back to demo data.
 
 ## Four-phase interfaces and storage
 
@@ -85,19 +85,19 @@ Security scans are run through Replit's Security tools.
 - The latest exact commands, test counts, runtime identities, scan results, and blockers are recorded in [`docs/HONEYPROBE_ACCEPTANCE_2026-10-23.md`](docs/HONEYPROBE_ACCEPTANCE_2026-10-23.md).
 - `python scripts/self-test-honeyprobe.py`: **14 PASS, 0 FAIL, 2 BLOCKED, 0 SKIPPED**. The two required environment checks remain blocked; the runner exits nonzero rather than presenting an incomplete run as a pass.
 - The Replit module, Phase 1 backend, locked `uv` environment, and root test process use Python **3.13.11**. The combined Project workflow restarted successfully, the Phase 1 API interpreter was checked in the running Uvicorn process, and gateway health returned HTTP 200.
-- Phase 1 backend/integration: 20 tests; trusted-proxy: 7; Phase 2: 4; Phase 3: 16; Phase 4 API client: 4; runner status contract: 14. Both workspace typechecks, lint, and production builds passed.
+- Phase 1 backend/integration: 23 tests; trusted-proxy: 7; Phase 2: 4; Phase 3: 16; Phase 4 API client: 4; runner status contract: 14. Both workspace typechecks, lint, and production builds passed.
 - Fresh scans: **0 critical, 2 high, 0 moderate, 0 low** dependency findings; SAST: **0**; HoundDog: **0**. The unresolved high advisory is `braces@3.0.3`; details and affected dependency paths are in `docs/security-scan-results.md`.
-- The preview correctly shows the Clerk setup-required notice and labeled demo option. Protected routes fail closed; no authentication bypass was added.
-- Docker Compose configuration validation passed, but runtime/volume-restart verification is blocked because the Docker daemon is unreachable. Authenticated Live verification remains blocked until matching Clerk keys and a verified operator allowlist are configured.
+- The preview shows the protected operator sign-in page and labeled demo option. Clerk development keys load; protected routes reject anonymous requests with HTTP 401. The headless screenshot browser is not signed in.
+- Docker Compose configuration validation passed, but runtime/volume-restart verification is blocked because the Docker daemon is unreachable. Authenticated API requests returned HTTP 200 after the allowlist was configured; the signed-in UI was not visually verified by the headless browser.
 
 ## Known limitations
 
-- No Clerk tenant/keys are configured yet; live console authorization requires the workspace owner to configure them and the verified operator allowlist.
+- The development allowlist is configured. A manually signed-in, verified operator session is needed for full visual verification of the live console.
 - Current event records retain source IP when the source provides it, but do not model source/destination ports, destination IP, protocol, user-agent, or ASN/geolocation enrichment.
 - The `/api/self-tests` endpoint is an in-process checklist; the root `scripts/self-test-honeyprobe.py` is the separate end-to-end acceptance runner for readiness, access control, backend and frontend suites, builds, restart persistence, and environment blockers.
 - Adaptive-action previews are tied to a non-test finding and its exact linked evidence, include the evidence digest in the recommendation, and persist in the audit log. They remain preview-only; no live apply route exists.
 - The dependency audit still reports the high `braces@3.0.3` advisory with no fixed release listed. The latest scan reports no moderate `postcss-selector-parser` findings; see `docs/security-scan-results.md`.
-- The fictional web decoy is local-only and does not collect credentials or operate on host resources; the database decoy is a simulator and no SSH/Cowrie service starts. Mobile telemetry, threat-intelligence enrichment, and case-management integrations are absent.
+- The fictional web decoy is local-only and does not collect credentials or operate on host resources; the database, SSH, and mobile channels are interaction simulators, not public listeners. Raw command capture, external threat-intelligence enrichment, and case-management integrations are absent.
 - Source profiles are aggregated from local events only; there is no external attribution.
 - Phase 3 only runs configured sample-target checks and dry-run previews. No automated production changes are performed.
 - Reports currently provide saved JSON, CSV, and printable HTML; no PDF generator, keyed signing, or independently immutable archive is connected.
