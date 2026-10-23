@@ -252,13 +252,13 @@ export function LiveDashboard() {
     queryKey: ['honeyprobe', 'overview', 'observed'],
     queryFn: () =>
       honeyProbeRequest<Overview>('/api/overview?include_demo=false'),
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
   const events = useQuery({
     queryKey: ['honeyprobe', 'events', 'recent-observed'],
     queryFn: () =>
       honeyProbeRequest<EventPage>('/api/events?include_demo=false&limit=8'),
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
   const profiles = useQuery({
     queryKey: ['honeyprobe', 'profiles', 'observed'],
@@ -269,16 +269,16 @@ export function LiveDashboard() {
   const findings = useQuery({
     queryKey: ['honeyprobe', 'findings', 'observed'],
     queryFn: () =>
-      honeyProbeRequest<DetectionFinding[]>('/api/findings?include_demo=false&limit=8'),
-    refetchInterval: 10_000,
+      honeyProbeRequest<DetectionFinding[]>('/api/findings?include_demo=false&limit=200'),
+    refetchInterval: 30_000,
   });
   const evidence = useQuery({
     queryKey: ['honeyprobe', 'evidence', 'observed'],
     queryFn: () =>
       honeyProbeRequest<EvidenceRecord[]>(
-        '/api/evidence?include_demo=false&limit=100',
+        '/api/evidence?include_demo=false&limit=25',
       ),
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
   const assessment = useQuery({
     queryKey: ['honeyprobe', 'assessment', 'controlled-simulation'],
@@ -286,6 +286,16 @@ export function LiveDashboard() {
       honeyProbeRequest<DeceptionReadinessAssessment>(
         '/api/assessment/deception',
       ),
+  });
+  const selfTests = useQuery({
+    queryKey: ['honeyprobe', 'dashboard-self-tests'],
+    queryFn: () => honeyProbeRequest<SelfTestResult[]>('/api/self-tests'),
+    refetchInterval: 30_000,
+  });
+  const adaptations = useQuery({
+    queryKey: ['honeyprobe', 'dashboard-adaptations'],
+    queryFn: () => honeyProbeRequest<AdaptiveProposal[]>('/api/adaptations?limit=10'),
+    refetchInterval: 30_000,
   });
   const simulation = useMutation({
     mutationFn: (scenario: {
@@ -308,23 +318,47 @@ export function LiveDashboard() {
     findings.error ??
     evidence.error ??
     assessment.error ??
+    selfTests.error ??
+    adaptations.error ??
     simulation.error;
   const data = overview.data;
   const highFindingCount = data?.suspicious_findings.value ?? 0;
+  const activityBuckets = (data?.activity ?? []).slice(-24).reduce<Array<{ bucket: string; count: number }>>((groups, item, index, source) => {
+    if (index % 2 !== 0) return groups;
+    const pair = source.slice(index, index + 2);
+    groups.push({
+      bucket: item.bucket,
+      count: pair.reduce((sum, bucket) => sum + bucket.count, 0),
+    });
+    return groups;
+  }, []);
+  const peakActivity = Math.max(1, ...activityBuckets.map((bucket) => bucket.count));
+  const categoryCounts = (findings.data ?? []).reduce<Record<string, number>>((counts, finding) => {
+    counts[finding.rule_name] = (counts[finding.rule_name] ?? 0) + 1;
+    return counts;
+  }, {});
+  const findingCategories = Object.entries(categoryCounts)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 6);
+  const latestTests = (selfTests.data ?? []).filter((test) => test.last_run).slice(0, 3);
+  const recentAdaptations = adaptations.data ?? [];
+  const pendingAdaptations = recentAdaptations.filter((item) => item.status === 'pending').length;
 
   return (
     <LiveConsoleLayout>
       <PageHeader
         eyebrow="01 / operational picture"
         title="HoneyProbe operations"
-        description="Persisted event telemetry from the protected HoneyProbe API. Synthetic test records are excluded from these views."
+        description="Live operational view backed by persisted events, findings, service registry, self-tests, and controlled adaptation records. Test/demo events are excluded."
         action={<LiveModeBadge />}
       />
       {error && <ApiError error={error as Error} />}
       {(overview.isLoading ||
         events.isLoading ||
         profiles.isLoading ||
-        evidence.isLoading) &&
+        evidence.isLoading ||
+        selfTests.isLoading ||
+        adaptations.isLoading) &&
       !data ? (
         <LoadingPanel />
       ) : (
@@ -438,6 +472,100 @@ export function LiveDashboard() {
               </div>
             </Panel>
           </div>
+          <div className="mb-6 grid gap-5 xl:grid-cols-3">
+            <Panel className="p-5 xl:col-span-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Persisted activity · last 24 hours</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">Two-hour totals from backend hourly buckets; test/demo events are excluded.</p>
+                </div>
+                <Link href="/incidents" className="text-xs text-primary hover:underline">Investigate events</Link>
+              </div>
+              {activityBuckets.length > 0 ? (
+                <div className="mt-5 grid h-36 grid-cols-12 items-end gap-2" role="img" aria-label="Hourly event activity chart">
+                  {activityBuckets.map((bucket) => {
+                    const height = Math.max(4, (bucket.count / peakActivity) * 100);
+                    return (
+                      <div className="flex h-full min-w-0 flex-col items-center justify-end gap-2" key={bucket.bucket} title={`${new Date(bucket.bucket).toLocaleString()}: ${bucket.count} events`}>
+                        <span className="mono text-[9px] text-muted-foreground">{bucket.count}</span>
+                        <div className="w-full rounded-t bg-primary/80" style={{ height: `${height}%` }} />
+                        <span className="mono text-[8px] text-muted-foreground">{new Date(bucket.bucket).toLocaleTimeString([], { hour: '2-digit' })}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-5 rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">No activity buckets are available.</div>
+              )}
+              <div className="mt-6 border-t border-border pt-4">
+                <h3 className="text-xs font-semibold">Finding categories by matched rule</h3>
+                <p className="mt-1 text-[10px] text-muted-foreground">Distribution uses persisted non-demo rule matches loaded for this dashboard.</p>
+                {findingCategories.length > 0 ? (
+                  <div className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2">
+                    {findingCategories.map(([name, count]) => (
+                      <div key={name}>
+                        <div className="mb-1 flex justify-between gap-3 text-[10px]"><span className="truncate">{name}</span><span className="mono text-muted-foreground">{count}</span></div>
+                        <div className="h-1.5 overflow-hidden rounded bg-muted"><div className="h-full rounded bg-accent" style={{ width: `${Math.max(6, (count / Math.max(...findingCategories.map((item) => item[1]))) * 100)}%` }} /></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs text-muted-foreground">{findings.isLoading ? 'Loading rule matches…' : 'No persisted findings in the selected window.'}</p>
+                )}
+              </div>
+            </Panel>
+            <Panel className="p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Decoy service health</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">Backend registry status</p>
+                </div>
+                <Link href="/settings" aria-label="Open system health" className="text-xs text-primary hover:underline">Details</Link>
+              </div>
+              <div className="mt-4 space-y-3">
+                {(data?.decoys ?? []).map((decoy) => (
+                  <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-2 last:border-0" key={decoy.id}>
+                    <div className="min-w-0"><p className="truncate text-xs font-medium">{decoy.name}</p><p className="mt-1 text-[10px] text-muted-foreground">{decoy.event_count} persisted interactions</p></div>
+                    <StatusPill value={decoy.status.replaceAll('_', ' ')} tone={decoy.status === 'connected' ? 'good' : decoy.status === 'unavailable' ? 'bad' : 'warn'} />
+                  </div>
+                ))}
+                {!data?.decoys.length && <p className="text-xs text-muted-foreground">No service registry data is available.</p>}
+              </div>
+              <div className="mt-5 border-t border-border pt-4">
+                <div className="flex items-center justify-between gap-3"><h3 className="text-xs font-semibold">Latest self-tests</h3><Link href="/self-tests" className="text-[10px] text-primary hover:underline">View tests</Link></div>
+                <div className="mt-3 space-y-2">
+                  {latestTests.map((test) => (
+                    <div className="flex items-start justify-between gap-3" key={test.name}>
+                      <span className="min-w-0 text-[10px] text-muted-foreground">{test.name}</span>
+                      <StatusPill value={test.status} tone={test.status === 'pass' ? 'good' : test.status === 'fail' ? 'bad' : 'warn'} />
+                    </div>
+                  ))}
+                  {!selfTests.isLoading && latestTests.length === 0 && <p className="text-[10px] text-muted-foreground">No persisted self-test results.</p>}
+                </div>
+              </div>
+            </Panel>
+          </div>
+          <Panel className="mb-6 overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+              <div>
+                <h2 className="text-sm font-semibold">Adaptation approvals and outcomes</h2>
+                <p className="mt-1 text-xs text-muted-foreground">Approval and verification states are read from persisted proposals.</p>
+              </div>
+              <Link href="/adaptation-history" className="text-xs text-primary hover:underline">Open history · {pendingAdaptations} pending in latest 10</Link>
+            </div>
+            {recentAdaptations.length > 0 ? (
+              <div className="divide-y divide-border/70">
+                {recentAdaptations.slice(0, 4).map((item) => (
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3" key={item.id}>
+                    <div><p className="text-xs font-medium">Web decoy · {item.response_profile} profile</p><p className="mt-1 text-[10px] text-muted-foreground">Finding {item.finding_id} · verification {item.verification_status}</p></div>
+                    <StatusPill value={item.status} tone={item.status === 'applied' ? 'good' : item.status === 'pending' ? 'warn' : item.status === 'rejected' ? 'bad' : 'neutral'} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="p-5 text-xs text-muted-foreground">{adaptations.isLoading ? 'Loading adaptation history…' : 'No adaptation proposals are recorded.'}</p>
+            )}
+          </Panel>
           <div className="grid gap-5 xl:grid-cols-[1.25fr_.75fr]">
             <Panel className="overflow-hidden">
               <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -496,7 +624,7 @@ export function LiveDashboard() {
             </div>
             {findings.data && findings.data.length > 0 ? (
               <div className="divide-y divide-border/70">
-                {findings.data.map((finding) => {
+                  {findings.data.slice(0, 8).map((finding) => {
                   const linkedEvidence = evidence.data?.find(
                     (record) => record.id === finding.evidence_id,
                   );
@@ -573,6 +701,11 @@ export function LiveIncidents() {
     queryFn: () =>
       honeyProbeRequest<SourceProfile[]>('/api/sources/profiles?include_demo=false&limit=100'),
   });
+  const findings = useQuery({
+    queryKey: ['honeyprobe', 'findings', 'incidents'],
+    queryFn: () => honeyProbeRequest<DetectionFinding[]>('/api/findings?include_demo=false&limit=200'),
+    refetchInterval: 30_000,
+  });
   const filtered = useMemo(
     () =>
       (events.data?.items ?? []).filter((event) => {
@@ -589,11 +722,11 @@ export function LiveIncidents() {
     <LiveConsoleLayout>
       <PageHeader
         eyebrow="02 / incident register"
-        title="Events & source profiles"
-        description="Search stored observations and inspect event-derived source profiles. Test/demo records are excluded."
+        title="Incidents & attacks"
+        description="Investigate persisted event observations, rule-linked findings, evidence references, and event-derived source profiles. Test/demo records are excluded."
         action={<LiveModeBadge />}
       />
-      {(events.error || profiles.error) && <ApiError error={(events.error ?? profiles.error) as Error} />}
+      {(events.error || profiles.error || findings.error) && <ApiError error={(events.error ?? profiles.error ?? findings.error) as Error} />}
       <Panel className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border p-4 md:flex-row">
           <div className="relative flex-1">
@@ -624,6 +757,37 @@ export function LiveIncidents() {
           {filtered.length} matching persisted events · synthetic records remain labeled
         </div>
         {events.isLoading ? <LoadingPanel label="Loading persisted events…" /> : <EventTable events={filtered} onInspect={setSelected} />}
+      </Panel>
+
+      <Panel className="mt-5 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <h2 className="text-sm font-semibold">Detected incidents</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Rule matches linked to stored event and evidence IDs · newest first</p>
+          </div>
+          <Link href="/evidence" className="text-xs text-primary hover:underline">Review evidence</Link>
+        </div>
+        {findings.isLoading ? (
+          <p className="p-5 text-sm text-muted-foreground">Loading persisted findings…</p>
+        ) : (findings.data ?? []).length === 0 ? (
+          <p className="p-6 text-sm text-muted-foreground">No non-demo findings have been recorded.</p>
+        ) : (
+          <div className="divide-y divide-border/70">
+            {(findings.data ?? []).map((finding) => {
+              const event = events.data?.items.find((item) => item.id === finding.event_id);
+              return (
+                <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4" key={finding.id}>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2"><StatusPill value={finding.severity.toUpperCase()} /><span className="text-sm font-medium">{finding.rule_name}</span></div>
+                    <p className="mt-2 text-xs text-muted-foreground">{finding.reason}</p>
+                    <p className="mono mt-1 break-all text-[10px] text-muted-foreground">Finding {finding.id} · Event {finding.event_id} · Evidence {finding.evidence_id}</p>
+                  </div>
+                  {event && <button type="button" onClick={() => setSelected(event)} className="rounded-md border border-border px-3 py-2 text-xs hover:border-primary/50 hover:text-primary">Inspect event</button>}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Panel>
 
       <Panel className="mt-5 overflow-hidden">
@@ -1160,7 +1324,7 @@ export function LiveReports() {
         eyebrow="04 / evidence export"
         title="Reports & evidence"
         description="Generate a persisted report from non-demo events, linked evidence and findings, latest self-test results, and adaptation previews. Demo records are excluded by the API."
-        action={<LiveModeBadge />}
+        action={<div className="flex flex-wrap items-center gap-2"><LiveModeBadge /><Link href="/evidence" className="rounded-lg border border-border px-3 py-2 text-xs hover:border-primary/50 hover:text-primary">Evidence ledger</Link></div>}
       />
       {(summary.error || generate.error) && <ApiError error={(summary.error ?? generate.error) as Error} />}
       <div className="grid gap-5 xl:grid-cols-[1fr_.8fr]">

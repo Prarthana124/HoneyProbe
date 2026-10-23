@@ -41,51 +41,74 @@
 }
 
 :root {
-  --background: 210 32% 8%;
-  --foreground: 202 35% 92%;
-  --border: 205 24% 19%;
-  --input: 205 25% 22%;
-  --ring: 174 59% 63%;
-  --card: 208 29% 12%;
-  --card-foreground: 202 35% 92%;
-  --card-border: 205 25% 20%;
-  --sidebar: 211 37% 7%;
-  --sidebar-foreground: 205 28% 76%;
-  --sidebar-border: 204 26% 16%;
-  --sidebar-primary: 174 59% 63%;
-  --sidebar-primary-foreground: 210 32% 8%;
-  --sidebar-accent: 205 25% 14%;
-  --sidebar-accent-foreground: 202 35% 92%;
-  --primary: 174 59% 63%;
-  --primary-foreground: 210 32% 8%;
-  --secondary: 205 25% 16%;
-  --secondary-foreground: 202 35% 88%;
-  --muted: 205 24% 16%;
-  --muted-foreground: 205 17% 57%;
-  --accent: 39 80% 65%;
-  --accent-foreground: 210 32% 8%;
-  --destructive: 5 72% 66%;
-  --destructive-foreground: 210 32% 8%;
+  --background: 216 38% 8%;
+  --foreground: 210 30% 92%;
+  --border: 215 25% 20%;
+  --input: 215 26% 23%;
+  --ring: 198 88% 62%;
+  --card: 216 32% 11%;
+  --card-foreground: 210 30% 92%;
+  --card-border: 215 25% 20%;
+  --sidebar: 218 42% 7%;
+  --sidebar-foreground: 211 25% 76%;
+  --sidebar-border: 215 28% 16%;
+  --sidebar-primary: 198 88% 62%;
+  --sidebar-primary-foreground: 216 38% 8%;
+  --sidebar-accent: 216 29% 13%;
+  --sidebar-accent-foreground: 210 30% 94%;
+  --primary: 198 88% 62%;
+  --primary-foreground: 216 42% 8%;
+  --secondary: 215 25% 16%;
+  --secondary-foreground: 210 25% 88%;
+  --muted: 215 25% 15%;
+  --muted-foreground: 213 16% 62%;
+  --accent: 174 58% 58%;
+  --accent-foreground: 216 42% 8%;
+  --destructive: 0 68% 66%;
+  --destructive-foreground: 216 42% 8%;
   --app-font-sans: 'Space Grotesk', sans-serif;
   --app-font-mono: 'IBM Plex Mono', monospace;
-  --radius: 0.7rem;
-  --elevate-1: rgba(150, 230, 220, 0.04);
-  --elevate-2: rgba(150, 230, 220, 0.08);
+  --radius: 0.65rem;
+  --elevate-1: rgba(129, 198, 225, 0.035);
+  --elevate-2: rgba(129, 198, 225, 0.07);
 }
 
 .dark { color-scheme: dark; }
 
 @layer base {
   * { @apply border-border; }
-  html { background: hsl(var(--background)); }
-  body { @apply font-sans antialiased bg-background text-foreground; margin: 0; }
+  html { min-width: 320px; background: hsl(var(--background)); }
+  body { @apply font-sans antialiased bg-background text-foreground; margin: 0; min-height: 100dvh; }
   button, input, select, textarea { font: inherit; }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+  :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+  ::selection { color: hsl(var(--foreground)); background: hsl(var(--primary) / .28); }
 }
 
-@keyframes console-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes pulse-dot { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
-.console-enter { animation: console-in .45s ease-out both; }
-.delay-1 { animation-delay: 70ms; } .delay-2 { animation-delay: 140ms; } .delay-3 { animation-delay: 210ms; }
+@keyframes console-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+.console-enter { animation: console-in .28s ease-out both; }
+.delay-1 { animation-delay: 45ms; } .delay-2 { animation-delay: 90ms; } .delay-3 { animation-delay: 135ms; }
 .status-pulse { animation: pulse-dot 2.2s ease-in-out infinite; }
 .mono { font-family: var(--app-font-mono); }
-.grid-hairline { background-image: linear-gradient(hsl(205 24% 16% / .32) 1px, transparent 1px), linear-gradient(90deg, hsl(205 24% 16% / .32) 1px, transparent 1px); background-size: 26px 26px; }
+@keyframes pulse-dot { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+
+.grid-hairline {
+  background-color: hsl(var(--background));
+}
+
+button, a, input, select, textarea {
+  transition-property: color, background-color, border-color, opacity, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+button:disabled { cursor: not-allowed; }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: hsl(var(--background)); }
+::-webkit-scrollbar-thumb { border: 2px solid hsl(var(--background)); border-radius: 999px; background: hsl(var(--border)); }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / .65); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

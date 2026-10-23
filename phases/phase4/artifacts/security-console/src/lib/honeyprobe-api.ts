@@ -1,6 +1,41 @@
 export type Severity = 'info' | 'low' | 'medium' | 'high' | 'critical';
 export type EventEnvironment = 'local' | 'test' | 'configured_lab';
 
+export type ActivityBucket = {
+  bucket: string;
+  count: number;
+};
+
+export type DecoyService = {
+  id: 'web' | 'ssh' | 'database' | 'mobile';
+  name: string;
+  integration_type: string;
+  status: 'connected' | 'not_configured' | 'unavailable' | 'demo_mode';
+  description: string;
+  event_count: number;
+  last_event_at: string | null;
+  setup_instructions: string;
+};
+
+export type Analytics = {
+  total_events: number;
+  demo_events: number;
+  observed_events: number;
+  events_over_time: ActivityBucket[];
+  severity_counts: Record<Severity, number>;
+  source_counts: Record<string, number>;
+  category_counts: Record<string, number>;
+  session_activity: unknown[];
+  top_routes: { route: string; count: number }[];
+};
+
+export type SystemHealth = {
+  status: 'healthy' | 'degraded';
+  environment: string;
+  database: { status: string; engine: string; path_label: string };
+  checked_at: string;
+};
+
 export type HoneyProbeEvent = {
   id: string;
   timestamp: string;
@@ -32,8 +67,10 @@ export type Overview = {
   unique_sessions: { value: number; context: string };
   active_decoys: { value: number; context: string };
   telemetry_health: 'healthy' | 'degraded';
+  activity: ActivityBucket[];
   severity_counts: Record<Severity, number>;
   recent_events: HoneyProbeEvent[];
+  decoys: DecoyService[];
   last_updated: string;
 };
 

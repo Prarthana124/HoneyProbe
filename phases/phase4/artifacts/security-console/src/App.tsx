@@ -26,9 +26,16 @@ import {
 import { DemoRulesNotice, LiveRulesPage } from '@/pages/live-rules-page';
 import {
   DemoOperationsNotice,
+  LiveDecoysPage,
   LiveAuditPage,
   LiveOperationsPage,
+  LiveSelfTestsPage,
 } from '@/pages/live-operations-pages';
+import {
+  LiveAdaptationHistoryPage,
+  LiveEvidencePage,
+  LiveSystemHealthPage,
+} from '@/pages/live-additional-pages';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,43 +61,43 @@ const clerkAppearance = {
     logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
   },
   variables: {
-    colorPrimary: '#64d8ce',
-    colorForeground: '#e4eff3',
-    colorMutedForeground: '#94a3b8',
-    colorDanger: '#ff7185',
-    colorBackground: '#101722',
-    colorInput: '#0b1119',
-    colorInputForeground: '#e2e8f0',
-    colorNeutral: '#273447',
+    colorPrimary: '#54b9ee',
+    colorForeground: '#dce8f2',
+    colorMutedForeground: '#91a4b8',
+    colorDanger: '#ed7782',
+    colorBackground: '#101b2a',
+    colorInput: '#0a1421',
+    colorInputForeground: '#dce8f2',
+    colorNeutral: '#27384b',
     fontFamily: 'Space Grotesk, sans-serif',
-    borderRadius: '0.7rem',
+    borderRadius: '0.65rem',
   },
   elements: {
     rootBox: 'w-full flex justify-center',
-    cardBox: 'bg-[#101722] border border-[#273447] rounded-2xl w-[440px] max-w-full overflow-hidden',
+    cardBox: 'bg-[#101b2a] border border-[#27384b] rounded-xl w-[440px] max-w-full overflow-hidden shadow-[0_24px_70px_rgba(0,0,0,0.28)]',
     card: '!shadow-none !border-0 !bg-transparent !rounded-none',
     footer: '!shadow-none !border-0 !bg-transparent !rounded-none',
-    headerTitle: 'text-[#e4eff3] text-xl font-semibold',
-    headerSubtitle: 'text-[#94a3b8]',
-    socialButtonsBlockButtonText: 'text-[#e2e8f0] font-medium',
-    formFieldLabel: 'text-[#cbd5e1]',
-    footerActionLink: 'text-[#64d8ce] hover:text-[#a8f0e9]',
-    footerActionText: 'text-[#94a3b8]',
-    dividerText: 'text-[#94a3b8]',
-    identityPreviewEditButton: 'text-[#64d8ce]',
-    formFieldSuccessText: 'text-[#4ddba1]',
-    alertText: 'text-[#ff8b99]',
+    headerTitle: 'text-[#dce8f2] text-xl font-semibold tracking-tight',
+    headerSubtitle: 'text-[#91a4b8]',
+    socialButtonsBlockButtonText: 'text-[#dce8f2] font-medium',
+    formFieldLabel: 'text-[#c3d1df]',
+    footerActionLink: 'text-[#59cfc1] hover:text-[#8be1d8]',
+    footerActionText: 'text-[#91a4b8]',
+    dividerText: 'text-[#91a4b8]',
+    identityPreviewEditButton: 'text-[#59cfc1]',
+    formFieldSuccessText: 'text-[#67d8aa]',
+    alertText: 'text-[#f28b94]',
     logoBox: 'rounded-lg',
     logoImage: 'object-contain',
-    socialButtonsBlockButton: 'bg-[#151f2c] border border-[#273447] text-[#e2e8f0]',
-    formButtonPrimary: 'bg-[#64d8ce] text-[#10131a] hover:bg-[#a8f0e9]',
-    formFieldInput: 'bg-[#0b1119] border-[#273447] text-[#e2e8f0]',
-    footerAction: 'border-t border-[#273447]',
-    dividerLine: 'bg-[#273447]',
-    alert: 'border-[#ff5c70]/30 bg-[#ff5c70]/10',
-    otpCodeFieldInput: 'bg-[#0b1119] border-[#273447] text-[#e4eff3]',
-    formFieldRow: 'text-[#cbd5e1]',
-    main: 'text-[#e2e8f0]',
+    socialButtonsBlockButton: 'bg-[#142235] border border-[#2a3d53] text-[#dce8f2] hover:bg-[#192b40]',
+    formButtonPrimary: 'bg-[#54b9ee] text-[#071522] hover:bg-[#78caf3]',
+    formFieldInput: 'bg-[#0a1421] border-[#2a3d53] text-[#dce8f2]',
+    footerAction: 'border-t border-[#27384b]',
+    dividerLine: 'bg-[#27384b]',
+    alert: 'border-[#ed7782]/30 bg-[#ed7782]/10',
+    otpCodeFieldInput: 'bg-[#0a1421] border-[#2a3d53] text-[#dce8f2]',
+    formFieldRow: 'text-[#c3d1df]',
+    main: 'text-[#dce8f2]',
   },
 };
 
@@ -124,12 +131,12 @@ function AuthLoading() {
 function AuthSetupRequired() {
   return (
     <main className="grid min-h-[100dvh] place-items-center bg-background px-5 py-12 text-foreground">
-      <section className="w-full max-w-xl rounded-2xl border border-border bg-card p-7 shadow-2xl md:p-10">
+      <section className="w-full max-w-xl rounded-xl border border-card-border bg-card p-6 shadow-[0_24px_70px_hsl(218_40%_3%/.28)] sm:p-8 md:p-10">
         <div className="grid h-12 w-12 place-items-center rounded-xl bg-primary/10 text-primary">
           <ShieldAlert size={22} />
         </div>
         <p className="mono mt-6 text-[10px] uppercase tracking-[.2em] text-primary">HoneyProbe access control</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">Authentication setup required</h1>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">Authentication setup required</h1>
         <p className="mt-4 text-sm leading-6 text-muted-foreground">
           The live console is protected by Clerk and the server-side verified-operator allowlist. Clerk is not configured in this workspace, so live API data stays locked.
         </p>
@@ -147,10 +154,10 @@ function AuthSetupRequired() {
 function SignedOutLanding() {
   return (
     <main className="grid min-h-[100dvh] place-items-center bg-background px-5 py-12 text-foreground">
-      <section className="w-full max-w-xl rounded-2xl border border-border bg-card p-7 shadow-2xl md:p-10">
-        <div className="grid h-12 w-12 place-items-center rounded-xl bg-primary text-primary-foreground"><ShieldAlert size={22} /></div>
+      <section className="w-full max-w-xl rounded-xl border border-card-border bg-card p-6 shadow-[0_24px_70px_hsl(218_40%_3%/.28)] sm:p-8 md:p-10">
+        <div className="grid h-12 w-12 place-items-center rounded-lg border border-primary/20 bg-primary/10 text-primary"><ShieldAlert size={21} /></div>
         <p className="mono mt-6 text-[10px] uppercase tracking-[.2em] text-primary">HoneyProbe security console</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">Protected operator access</h1>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">Protected operator access</h1>
         <p className="mt-4 text-sm leading-6 text-muted-foreground">
           Sign in with a verified operator account to view persisted HoneyProbe telemetry. Sample data is available separately and is never substituted into live views.
         </p>
@@ -200,6 +207,21 @@ function RulesRoute() {
 function OperationsRoute() {
   return <GuardedPage live={LiveOperationsPage} demo={DemoOperationsNotice} />;
 }
+function DecoysRoute() {
+  return <GuardedPage live={LiveDecoysPage} demo={DemoOperationsNotice} />;
+}
+function SelfTestsRoute() {
+  return <GuardedPage live={LiveSelfTestsPage} demo={DemoOperationsNotice} />;
+}
+function AdaptationHistoryRoute() {
+  return <GuardedPage live={LiveAdaptationHistoryPage} demo={DemoOperationsNotice} />;
+}
+function EvidenceRoute() {
+  return <GuardedPage live={LiveEvidencePage} demo={DemoOperationsNotice} />;
+}
+function SystemHealthRoute() {
+  return <GuardedPage live={LiveSystemHealthPage} demo={DemoOperationsNotice} />;
+}
 function AuditRoute() {
   return <GuardedPage live={LiveAuditPage} demo={DemoOperationsNotice} />;
 }
@@ -213,9 +235,14 @@ function DemoOnlyRouter() {
         <Route path="/adaptation" component={DemoAdaptation} />
         <Route path="/reports" component={DemoReports} />
         <Route path="/verification" component={DemoVerification} />
-          <Route path="/rules" component={DemoRulesNotice} />
-          <Route path="/operations" component={DemoOperationsNotice} />
-          <Route path="/audit" component={DemoOperationsNotice} />
+        <Route path="/rules" component={DemoRulesNotice} />
+        <Route path="/operations" component={DemoOperationsNotice} />
+        <Route path="/decoys" component={DemoOperationsNotice} />
+        <Route path="/self-tests" component={DemoOperationsNotice} />
+        <Route path="/adaptation-history" component={DemoOperationsNotice} />
+        <Route path="/evidence" component={DemoOperationsNotice} />
+        <Route path="/settings" component={DemoOperationsNotice} />
+        <Route path="/audit" component={DemoOperationsNotice} />
         <Route component={NotFound} />
       </Switch>
     </WouterRouter>
@@ -271,6 +298,11 @@ function ClerkRoutes() {
           <Route path="/verification" component={VerificationRoute} />
           <Route path="/rules" component={RulesRoute} />
           <Route path="/operations" component={OperationsRoute} />
+          <Route path="/decoys" component={DecoysRoute} />
+          <Route path="/self-tests" component={SelfTestsRoute} />
+          <Route path="/adaptation-history" component={AdaptationHistoryRoute} />
+          <Route path="/evidence" component={EvidenceRoute} />
+          <Route path="/settings" component={SystemHealthRoute} />
           <Route path="/audit" component={AuditRoute} />
           <Route component={NotFound} />
         </Switch>

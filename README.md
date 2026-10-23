@@ -40,7 +40,7 @@ Use the single Project workflow for the integrated runtime. The separate Phase 4
 
 Protected live API routes require a Clerk session and a verified email address on the server-side operator allowlist. Missing or incomplete configuration fails closed; there is no unauthenticated development bypass.
 
-For development, supply matching test/development credentials from the same Clerk instance: `CLERK_SECRET_KEY` for the server, `CLERK_PUBLISHABLE_KEY` for the server, and the same publishable key as `VITE_CLERK_PUBLISHABLE_KEY` for the browser. Add `HONEYPROBE_ALLOWED_EMAILS` as a comma-separated list of verified operator email addresses. Keep the secret key in Replit Secrets; set the publishable key and allowlist in the workspace's development environment settings. `VITE_CLERK_PROXY_URL` is optional. These values must come from the project owner's configured Clerk instance; do not paste credentials into chat or source files. This workspace has a Replit-managed development Clerk tenant, server/browser keys, and a development operator allowlist configured. The headless acceptance runner cannot create a signed-in browser session.
+For development, configure matching test/development credentials from the same Clerk instance: `CLERK_SECRET_KEY` for the server, `CLERK_PUBLISHABLE_KEY` for the server, and the same publishable key as `VITE_CLERK_PUBLISHABLE_KEY` for the browser. Add `HONEYPROBE_ALLOWED_EMAILS` as a comma-separated list of verified operator email addresses. Keep the secret key in Replit Secrets; set the publishable key and allowlist in the workspace's development environment settings. `VITE_CLERK_PROXY_URL` is optional. These values must come from the project owner's configured Clerk instance; do not paste credentials into chat or source files. Clerk is not configured in the current workspace, so Live Mode remains locked until the owner configures it.
 
 Configure these in Replit Secrets/environment settings. Never put their values in source control:
 
@@ -69,7 +69,7 @@ Other settings:
 - **Phase 1** provides the Express auth gateway, FastAPI endpoints, and canonical SQLite event store. It persists observed events, built-in and operator-defined findings, linked evidence, rule versions, self-test results, reports, adaptation history, and operator audit records.
 - **Phase 2** provides bounded built-in detection functions reused by event ingestion and the Cowrie import adapter. Operator-defined rules use a separate, declarative allowlist; they cannot run arbitrary code or regular expressions.
 - **Phase 3** checks run through a read-only adapter that forces `apply_changes=False`; filesystem and host-hardening actions remain preview-only. A separate, approval-gated path can change only the local web decoy's allowlisted response profile.
-- **Phase 4** reads live overview, event, finding, evidence, rule, self-test, adaptation, audit, and reporting endpoints through the same-origin `/api` proxy. Demo fixtures are separate and only shown through **View clearly labeled demo preview**. API errors do not fall back to demo data.
+- **Phase 4** reads live overview, event, finding, evidence, rule, self-test, adaptation, audit, health, and reporting endpoints through the same-origin `/api` proxy. The dashboard summarizes persisted activity, findings, decoy registry state, self-tests, and adaptation outcomes. Demo fixtures are separate and only shown through **View clearly labeled demo preview**. API errors do not fall back to demo data.
 
 The fictional web decoy is a real local HTTP interaction source served only by FastAPI's loopback listener at `127.0.0.1:8180/decoy`; it records bounded visits and feeds route text to detection in memory. It does not accept credentials, execute paths, or touch files, and it is not exposed through the public web preview. Operators can propose, approve, verify, reject, and roll back only the `baseline` and `contextual` response profiles; changes are persisted and audited. Database, SSH, and mobile are bounded interaction simulators, not listening services. Cowrie is an import adapter, not a running Cowrie daemon; there is no external threat feed. Evidence hashes are tamper-evident checksums, not keyed signatures or an independently administered immutable archive.
 
@@ -87,9 +87,9 @@ For the phase entry points, API routes, storage details, and test locations, see
 
 ## Verification record
 
-The latest full verification and acceptance status is in the [HoneyProbe acceptance report](docs/HONEYPROBE_ACCEPTANCE_2026-10-23.md). It records the exact commands and counts, Python runtime identities, persistence/restart results, security findings, and environment blockers.
+The previous full verification record is in the [HoneyProbe acceptance report](docs/HONEYPROBE_ACCEPTANCE_2026-10-23.md). The current UI update and its verification status are recorded separately once the current checks complete.
 
-Current decision: **CODE COMPLETE WITH VERIFICATION BLOCKERS**. The acceptance runner reports 14 PASS, 0 FAIL, 2 BLOCKED, and 0 SKIPPED. The blocks are Docker runtime verification (no reachable Docker daemon) and the headless runner's inability to create a signed-in Clerk browser session. Clerk is configured in development; sign in with an allowlisted verified operator account to view live data. The runner exits nonzero while these required checks remain blocked; it does not report a false pass.
+Current workspace decision: **LIVE UI BLOCKED ON CLERK SETUP**. The API and console workflows are running, but the current workspace has no Clerk configuration, so authenticated Live Mode cannot be opened. Protected APIs remain locked; there is no authentication bypass. Use the clearly labeled demo preview only for visual review, not as live telemetry.
 
 Run the full acceptance suite with:
 

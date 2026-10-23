@@ -1,17 +1,21 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { Activity, BadgeCheck, Boxes, ChevronRight, CircleDot, FileCheck2, FileText, FlaskConical, LayoutDashboard, ListChecks, Menu, ScrollText, ShieldAlert, X } from 'lucide-react';
+import { Activity, BadgeCheck, Boxes, ChevronRight, CircleDot, FileCheck2, FileText, FlaskConical, LayoutDashboard, ListChecks, Menu, ScrollText, Settings2, ShieldAlert, X } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import { initialSystemStatus, type SystemStatus } from '@/data/demo-data';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/incidents', label: 'Incidents/Attacks', icon: ShieldAlert },
+  { href: '/incidents', label: 'Incidents & Attacks', icon: ShieldAlert },
+  { href: '/decoys', label: 'Decoy Services', icon: Boxes },
   { href: '/rules', label: 'Attack Rules', icon: ListChecks },
-  { href: '/operations', label: 'Decoys & Self-tests', icon: FlaskConical },
-  { href: '/adaptation', label: 'Adaptation History', icon: Activity },
+  { href: '/self-tests', label: 'Self-Testing', icon: FlaskConical },
+  { href: '/adaptation', label: 'Adaptive Deception', icon: Activity },
+  { href: '/adaptation-history', label: 'Adaptation History', icon: Activity },
+  { href: '/evidence', label: 'Evidence Ledger', icon: FileCheck2 },
   { href: '/reports', label: 'Reports', icon: FileText },
   { href: '/verification', label: 'SHA-256 Verification', icon: FileCheck2 },
-  { href: '/audit', label: 'Audit Log', icon: ScrollText },
+  { href: '/audit', label: 'Audit Logs', icon: ScrollText },
+  { href: '/settings', label: 'Settings & Health', icon: Settings2 },
 ];
 
 export function useSystemStatus() {
@@ -47,55 +51,65 @@ export function ConsoleShell({
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
-      <aside className={`fixed inset-y-0 left-0 z-40 w-[254px] border-r border-sidebar-border bg-sidebar transition-transform duration-300 md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex h-full flex-col px-4 py-5">
-          <div className="flex items-center justify-between px-2">
+      <a href="#console-main" className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
+        Skip to console content
+      </a>
+      <aside
+        id="console-navigation"
+        aria-label="Primary navigation"
+        className={`fixed inset-y-0 left-0 z-40 w-[254px] border-r border-sidebar-border bg-sidebar transition-transform duration-300 md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        <div className="flex h-full flex-col px-3 py-4">
+          <div className="flex items-center justify-between px-2 py-1">
             <Link href="/" onClick={() => setMobileOpen(false)} className="flex items-center gap-3" data-testid="link-brand">
-              <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary text-primary-foreground shadow-[0_0_24px_hsl(var(--primary)/.18)]"><ShieldAlert size={19} /></div>
-              <div><div className="text-sm font-semibold tracking-wide text-foreground">Aegis<span className="text-primary">/</span>Ops</div><div className="mono mt-0.5 text-[9px] uppercase tracking-[.18em] text-muted-foreground">security console</div></div>
+              <div className="grid h-9 w-9 place-items-center rounded-lg border border-primary/20 bg-primary/10 text-primary"><ShieldAlert size={18} /></div>
+              <div><div className="text-sm font-semibold tracking-wide text-foreground">Honey<span className="text-primary">Probe</span></div><div className="mono mt-0.5 text-[9px] uppercase tracking-[.18em] text-muted-foreground">security operations</div></div>
             </Link>
-            <button onClick={() => setMobileOpen(false)} className="rounded-md p-1 text-muted-foreground hover:bg-sidebar-accent md:hidden" data-testid="button-close-navigation"><X size={17} /></button>
+            <button type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent md:hidden" data-testid="button-close-navigation"><X size={17} /></button>
           </div>
-          <div className="mt-8 px-2"><div className="mono text-[10px] uppercase tracking-[.2em] text-muted-foreground">Command center</div></div>
-          <nav className="mt-3 max-h-[calc(100dvh-235px)] space-y-1 overflow-y-auto">
+          <div className="mt-7 border-t border-sidebar-border px-3 pt-5"><div className="mono text-[9px] uppercase tracking-[.2em] text-muted-foreground">Command center</div></div>
+          <nav className="mt-2 max-h-[calc(100dvh-226px)] space-y-0.5 overflow-y-auto px-1" aria-label="Console sections">
             {navItems.map((item) => {
               const active = routePath === item.href;
               const Icon = item.icon;
               const href = demoMode ? `${item.href}?mode=demo` : item.href;
-              return <Link key={item.href} href={href} onClick={() => setMobileOpen(false)} data-testid={`link-nav-${item.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} className={`group flex items-center gap-3 rounded-lg px-3 py-3 text-[13px] transition-colors ${active ? 'bg-sidebar-accent text-foreground shadow-[inset_3px_0_0_hsl(var(--primary))]' : 'text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-foreground'}`}><Icon size={17} className={active ? 'text-primary' : 'text-muted-foreground group-hover:text-primary'} /><span>{item.label}</span>{active && <ChevronRight size={14} className="ml-auto text-primary" />}</Link>;
+              return <Link key={item.href} href={href} onClick={() => setMobileOpen(false)} aria-current={active ? 'page' : undefined} data-testid={`link-nav-${item.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} className={`group flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-[12px] transition-colors ${active ? 'bg-sidebar-accent text-foreground shadow-[inset_2px_0_0_hsl(var(--primary))]' : 'text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-foreground'}`}><Icon size={16} strokeWidth={1.8} className={active ? 'text-primary' : 'text-muted-foreground group-hover:text-primary'} /><span>{item.label}</span>{active && <ChevronRight size={13} className="ml-auto text-primary" />}</Link>;
             })}
           </nav>
           <div className="mt-auto space-y-3">
-            <div className="rounded-lg border border-sidebar-border bg-sidebar-accent/50 p-3">
-              <div className="flex items-center gap-2"><span className={`status-pulse h-2 w-2 rounded-full ${system.api === 'reachable' ? 'bg-primary' : system.api === 'checking' ? 'bg-accent' : 'bg-destructive'}`} /><span className="text-xs font-medium">System status</span></div>
+            <div className="rounded-md border border-sidebar-border bg-sidebar-accent/35 p-3">
+              <div className="flex items-center gap-2"><span className={`status-pulse h-1.5 w-1.5 rounded-full ${system.api === 'reachable' ? 'bg-primary' : system.api === 'checking' ? 'bg-accent' : 'bg-destructive'}`} /><span className="text-[11px] font-medium">System status</span></div>
               <div className="mono mt-2 text-[10px] uppercase tracking-wider text-muted-foreground">{demoMode ? 'static sample data' : system.api === 'reachable' ? 'api reachable' : system.api === 'checking' ? 'checking api' : 'api unavailable'}</div>
             </div>
-            <div className="flex items-center gap-2 px-2 text-[10px] uppercase tracking-[.16em] text-muted-foreground"><CircleDot size={11} className={demoMode ? 'text-accent' : 'text-primary'} /> {demoMode ? 'Demo preview · static data' : 'Live API · test data excluded'}</div>
+            <div className="flex items-center gap-2 px-2 text-[9px] uppercase tracking-[.12em] text-muted-foreground"><CircleDot size={11} className={demoMode ? 'text-accent' : 'text-primary'} /> {demoMode ? 'Demo preview · static data' : 'Live API · test data excluded'}</div>
           </div>
         </div>
       </aside>
       {mobileOpen && <button aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="fixed inset-0 z-30 bg-background/75 md:hidden" data-testid="button-dismiss-navigation" />}
       <div className="md:pl-[254px]">
-        <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b border-border bg-background/90 px-5 backdrop-blur-md md:px-8">
-          <div className="flex items-center gap-3"><button onClick={() => setMobileOpen(true)} className="rounded-md p-2 text-muted-foreground hover:bg-muted md:hidden" data-testid="button-open-navigation"><Menu size={20} /></button><div className="text-sm text-muted-foreground">{activeLabel}</div><ChevronRight size={14} className="text-muted-foreground/60" /><div className="text-sm font-medium text-foreground">Operations view</div></div>
+        <header className="sticky top-0 z-20 flex min-h-[64px] items-center justify-between gap-3 border-b border-border bg-background/95 px-3 backdrop-blur-md sm:px-5 md:px-8">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <button type="button" aria-label="Open navigation" aria-controls="console-navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)} className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden" data-testid="button-open-navigation"><Menu size={19} /></button>
+            <div className="truncate text-xs text-muted-foreground sm:text-sm">{activeLabel}</div><ChevronRight size={13} className="shrink-0 text-muted-foreground/60" /><div className="hidden text-sm font-medium text-foreground sm:block">Operations view</div>
+          </div>
           <div className="flex items-center gap-2">
-            <div className={`hidden items-center gap-2 text-[10px] uppercase tracking-[.16em] sm:flex ${demoMode ? 'text-accent' : 'text-primary'}`}><BadgeCheck size={14} />{demoMode ? 'DEMO PREVIEW' : 'LIVE API'}</div>
-            <a href={demoMode ? routePath : `${routePath}?mode=demo`} className="rounded-lg border border-border px-2.5 py-2 text-[10px] uppercase tracking-wider text-muted-foreground hover:border-primary/50 hover:text-primary" data-testid="link-toggle-data-mode">{demoMode ? 'Return to live' : 'View demo preview'}</a>
+            <div className={`hidden items-center gap-1.5 text-[9px] font-medium uppercase tracking-[.14em] sm:flex ${demoMode ? 'text-accent' : 'text-primary'}`}><BadgeCheck size={13} />{demoMode ? 'DEMO PREVIEW' : 'LIVE API'}</div>
+            <a href={demoMode ? routePath : `${routePath}?mode=demo`} className="whitespace-nowrap rounded-md border border-border px-2.5 py-2 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground hover:border-primary/50 hover:text-primary sm:text-[10px]" data-testid="link-toggle-data-mode">{demoMode ? 'Return to live' : 'View demo preview'}</a>
             {authControls && <div className="ml-1">{authControls}</div>}
           </div>
         </header>
-        <main className="grid-hairline min-h-[calc(100dvh-68px)] px-5 py-7 md:px-8 md:py-9"><div className="mx-auto max-w-[1480px]">{children}</div></main>
+        <main id="console-main" tabIndex={-1} className="grid-hairline min-h-[calc(100dvh-64px)] px-4 py-6 outline-none sm:px-5 sm:py-7 md:px-8 md:py-9"><div className="mx-auto max-w-[1480px]">{children}</div></main>
       </div>
     </div>
   );
 }
 
 export function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
-  return <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div className="console-enter"><div className="mono mb-2 text-[10px] uppercase tracking-[.22em] text-primary">{eyebrow}</div><h1 className="text-3xl font-semibold tracking-[-.03em] text-foreground md:text-[38px]">{title}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p></div>{action && <div className="console-enter delay-1">{action}</div>}</div>;
+  return <div className="mb-7 flex flex-col justify-between gap-4 border-b border-border/70 pb-6 md:mb-8 md:flex-row md:items-end md:gap-6"><div className="console-enter min-w-0"><div className="mono mb-2 text-[9px] uppercase tracking-[.2em] text-primary">{eyebrow}</div><h1 className="text-[27px] font-semibold tracking-[-.035em] text-foreground sm:text-3xl md:text-[36px]">{title}</h1><p className="mt-2 max-w-3xl text-[13px] leading-6 text-muted-foreground">{description}</p></div>{action && <div className="console-enter delay-1 shrink-0">{action}</div>}</div>;
 }
 
 export function Panel({ children, className = '', testId, role }: { children: ReactNode; className?: string; testId?: string; role?: 'alert' | 'status' | 'region' }) {
-  return <section role={role} data-testid={testId} className={`rounded-xl border border-card-border bg-card/90 shadow-[0_12px_30px_hsl(210_40%_3%/.12)] ${className}`}>{children}</section>;
+  return <section role={role} data-testid={testId} className={`rounded-lg border border-card-border bg-card shadow-[0_8px_24px_hsl(218_40%_3%/.12)] ${className}`}>{children}</section>;
 }
 
 export function StatusPill({ value, tone }: { value: string; tone?: 'good' | 'warn' | 'bad' | 'neutral' }) {

@@ -57,21 +57,28 @@ const safeFixtures: Record<Decoy['id'], Record<string, unknown>> = {
   mobile: { interaction: 'deep_link_probe', component: 'admin' },
 };
 
-export function LiveOperationsPage() {
+type OperationsSection = 'all' | 'decoys' | 'self-tests';
+
+export function LiveOperationsPage({ section = 'all' }: { section?: OperationsSection } = {}) {
+  const showDecoys = section !== 'self-tests';
+  const showSelfTests = section !== 'decoys';
   const client = useQueryClient();
   const [lastEvent, setLastEvent] = useState<EventRecord | null>(null);
   const [lastRun, setLastRun] = useState<SelfTestRun | null>(null);
   const decoys = useQuery({
     queryKey: ['operator-decoys'],
     queryFn: () => honeyProbeRequest<Decoy[]>('/api/decoys'),
+    enabled: showDecoys,
   });
   const tests = useQuery({
     queryKey: ['operator-self-tests'],
     queryFn: () => honeyProbeRequest<SelfTestResult[]>('/api/self-tests'),
+    enabled: showSelfTests,
   });
   const assessment = useQuery({
     queryKey: ['operator-deception-assessment'],
     queryFn: () => honeyProbeRequest<Assessment>('/api/assessment/deception'),
+    enabled: showSelfTests,
   });
   const runTests = useMutation({
     mutationFn: () => honeyProbeRequest<SelfTestRun>('/api/self-tests/run', { method: 'POST', body: '{}' }),
@@ -99,10 +106,14 @@ export function LiveOperationsPage() {
   return (
     <ConsoleShell>
       <PageHeader
-        eyebrow="Service status and validation"
-        title="Decoys & self-tests"
-        description="Service health is read from the backend registry. The interaction buttons below create clearly identified, bounded simulator events; they do not contact third-party systems."
-        action={
+        eyebrow={section === 'decoys' ? 'Decoy service registry' : section === 'self-tests' ? 'Validation history' : 'Service status and validation'}
+        title={section === 'decoys' ? 'Decoy services' : section === 'self-tests' ? 'Self-testing' : 'Decoys & self-tests'}
+        description={section === 'decoys'
+          ? 'Service states and event counts come from the backend registry. Clearly labeled simulator controls record local events without contacting third-party systems.'
+          : section === 'self-tests'
+            ? 'Run the persisted safe self-test suite and inspect the latest backend results. Checks stay inside the local HoneyProbe environment.'
+            : 'Service health is read from the backend registry. Simulator interactions are bounded and never contact third-party systems.'}
+        action={showSelfTests ? (
           <button
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-3 text-xs font-semibold text-primary-foreground disabled:opacity-50"
             type="button"
@@ -112,15 +123,15 @@ export function LiveOperationsPage() {
             {runTests.isPending ? <RefreshCw size={14} className="animate-spin" /> : <FlaskConical size={14} />}
             Run safe self-tests
           </button>
-        }
+        ) : undefined}
       />
       {(decoys.error || tests.error || assessment.error || runTests.error || recordInteraction.error) && (
         <Panel className="mb-5 border-destructive/30 p-4 text-sm text-destructive" role="alert">
           {(decoys.error || tests.error || assessment.error || runTests.error || recordInteraction.error)?.message}
         </Panel>
       )}
-      <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
-        <Panel className="overflow-hidden">
+      <div className={`grid gap-5 ${section === 'all' ? 'lg:grid-cols-[1fr_340px]' : ''}`}>
+        {showDecoys && <Panel className="overflow-hidden">
           <div className="border-b border-border px-5 py-4">
             <h2 className="text-sm font-semibold">Decoy integration registry</h2>
             <p className="mt-1 text-xs text-muted-foreground">Live status and event totals from persisted backend records.</p>
@@ -158,8 +169,8 @@ export function LiveOperationsPage() {
               Test event persisted: <span className="mono">{lastEvent.id}</span> · {lastEvent.source_type} · {lastEvent.event_type} · simulated={String(lastEvent.metadata.simulated === true)}
             </div>
           )}
-        </Panel>
-        <Panel className="p-5">
+        </Panel>}
+        {showSelfTests && <Panel className="p-5">
           <div className="flex items-center gap-2"><ShieldCheck size={16} className="text-primary" /><h2 className="text-sm font-semibold">Controlled detection coverage</h2></div>
           {assessment.isLoading ? <p className="mt-4 text-sm text-muted-foreground">Evaluating configured test scenarios…</p> : assessment.data && (
             <>
@@ -169,9 +180,9 @@ export function LiveOperationsPage() {
               <ul className="mt-3 list-disc space-y-1 pl-4 text-[11px] leading-5 text-muted-foreground">{assessment.data.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
             </>
           )}
-        </Panel>
+        </Panel>}
       </div>
-      {(lastRun || tests.data) && (
+      {showSelfTests && (lastRun || tests.data) && (
         <Panel className="mt-5 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div><h2 className="text-sm font-semibold">Persisted self-test results</h2><p className="mt-1 text-xs text-muted-foreground">These checks execute schema, SQLite, ingestion, detection, export, and Phase 3 dry-run paths.</p></div>
@@ -222,4 +233,12 @@ export function LiveAuditPage() {
 
 export function DemoOperationsNotice() {
   return <ConsoleShell><PageHeader eyebrow="Demo preview" title="Operations unavailable" description="The static preview cannot run tests, create events, or inspect live service health. Sign in to use the protected operator tools." /></ConsoleShell>;
+}
+
+export function LiveDecoysPage() {
+  return <LiveOperationsPage section="decoys" />;
+}
+
+export function LiveSelfTestsPage() {
+  return <LiveOperationsPage section="self-tests" />;
 }
