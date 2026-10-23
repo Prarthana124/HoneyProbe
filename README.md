@@ -34,7 +34,7 @@ Port 5000 serves the Replit web preview. The existing root `.replit` also forwar
 HONEYPROBE_GATEWAY_PORT=8080 HONEYPROBE_INTERNAL_PORT=8180 bash scripts/start-honeyprobe.sh
 ```
 
-Keep the single Project workflow active. Do not start the individual Phase 1 or Phase 4 artifact workflows alongside it; those are separate development entry points and can compete for ports.
+Use the single Project workflow for the integrated runtime. The separate Phase 4 Security Operations Console artifact can also run on its managed port `22713` after the Phase 4 workspace dependencies are installed; its `/api` proxy uses the existing gateway on port `8080`. Avoid starting standalone Phase 1 API/UI workflows alongside the Project workflow because they can compete for ports `5000`, `8080`, or `8180`.
 
 ## Authentication and environment
 
@@ -87,6 +87,6 @@ Run the full acceptance suite with:
 python scripts/self-test-honeyprobe.py
 ```
 
-The Project workflow is the supported runtime. Do not start the standalone Phase 1 or Phase 4 artifact workflows beside it because they can compete for ports.
+The Project workflow is the supported integrated runtime. The Security Operations Console artifact also runs independently on managed port `22713` once its workspace dependencies are installed. Avoid starting standalone Phase 1 API/UI workflows beside the Project workflow because they can compete for ports.
 
 Do not publish this controlled-lab application without a separate network-isolation and access-control review. No deployment, push, or manual commit was performed. The workspace started on branch `main` aligned with `origin/main`; the current HoneyProbe changes are uncommitted. Confirm the repository state before release.

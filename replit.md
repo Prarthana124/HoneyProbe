@@ -7,7 +7,7 @@
 - Phase 4 Vite listens on port 5000. It proxies same-origin `/api` requests to `HONEYPROBE_GATEWAY_PORT` (default 8080).
 - FastAPI binds only to `127.0.0.1` on `HONEYPROBE_INTERNAL_PORT` (default 8180). The launcher checks gateway health before starting the UI.
 - The launcher validates that the web, gateway, and internal API ports are distinct. The Vite proxy uses the same gateway port setting.
-- Port 5000 is the only web-preview mapping. Do not start the former Phase 1 UI/API or Phase 4 UI workflows at the same time; those duplicate the services and ports.
+- Port 5000 serves the integrated Project preview. The separate Phase 4 Security Operations Console artifact uses managed port 22713 (mapped to external port 3000) and proxies `/api` to the existing gateway; it can run beside the Project workflow once Phase 4 dependencies are installed. Avoid starting standalone Phase 1 API/UI workflows beside the Project workflow because they use shared ports.
 - The standalone Phase 2 server and Phase 4 API scaffold are not part of this integrated runtime.
 
 The launcher installs the locked Phase 1 and Phase 4 pnpm workspace dependencies when missing. It runs `uv sync --locked --project phases/phase1` if the Phase 1 Python environment is incomplete.

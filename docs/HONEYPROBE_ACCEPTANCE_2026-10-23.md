@@ -88,7 +88,12 @@ The prior `postcss-selector-parser` advisory is no longer reported by the latest
 
 - **Docker runtime — BLOCKED:** `docker --version` succeeds, but `docker info` cannot connect to a Docker daemon. Compose configuration parses successfully; image build, health checks, and persistent-volume restart were not run.
 - **Clerk Live session — BLOCKED:** required Clerk configuration is missing, so a verified signed-in browser session and Live dashboard were not tested. The app remains fail-closed.
-- **Standalone artifact workflows:** the single combined Project workflow is the supported runtime. Individual Phase 1/Phase 4 workflows are not needed alongside it and can compete for ports.
+
+## Security Console artifact workflow recovery
+
+The Security Operations Console artifact's earlier failure was a stale startup attempt: it ran before the combined workflow had installed the Phase 4 workspace dependencies and logged `vite: not found`. After those locked dependencies were installed, restarting only the configured console artifact workflow succeeded. Vite `7.3.7` now serves the artifact on managed port `22713`; the page and `/api/healthz` proxy both return HTTP 200. `/api/findings` returns the expected HTTP 503 while Clerk is unconfigured. The integrated Project workflow remains running on port `5000`; no application source changes were needed.
+
+The Phase 4 console artifact can run alongside the Project workflow after dependency installation. Standalone Phase 1 API/UI workflows remain separate entry points that can compete for shared ports.
 
 ## Changed files
 
