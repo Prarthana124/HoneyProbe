@@ -27,6 +27,8 @@ export type EventPage = {
 export type Overview = {
   total_events: { value: number; context: string };
   suspicious_events: { value: number; context: string };
+  findings_count: { value: number; context: string };
+  suspicious_findings: { value: number; context: string };
   unique_sessions: { value: number; context: string };
   active_decoys: { value: number; context: string };
   telemetry_health: 'healthy' | 'degraded';
@@ -79,6 +81,8 @@ export type DetectionFinding = {
   severity: Severity;
   reason: string;
   created_at: string;
+  rule_id?: string | null;
+  rule_version?: number | null;
 };
 
 export type DeceptionReadinessAssessment = {
@@ -119,6 +123,32 @@ export type AdaptiveActionAudit = {
   evidence_id: string | null;
 };
 
+export type AdaptiveProposal = {
+  id: string;
+  finding_id: string;
+  evidence_id: string;
+  response_profile: 'baseline' | 'contextual';
+  previous_profile: 'baseline' | 'contextual' | null;
+  status: 'pending' | 'applied' | 'rejected' | 'rolled_back';
+  reason: string;
+  proposed_by: string;
+  proposed_at: string;
+  approved_by: string | null;
+  approved_at: string | null;
+  applied_at: string | null;
+  rolled_back_at: string | null;
+  applied_version: number | null;
+  verification_status: 'not_run' | 'passed' | 'failed';
+  verification_detail: string;
+};
+
+export type WebDecoyConfig = {
+  response_profile: 'baseline' | 'contextual';
+  version: number;
+  updated_at: string;
+  updated_by: string;
+};
+
 export type ReportDocument = {
   id: string;
   generated_at: string;
@@ -130,6 +160,10 @@ export type ReportDocument = {
   };
   events: HoneyProbeEvent[];
   evidence: EvidenceRecord[];
+  findings: DetectionFinding[];
+  self_tests: SelfTestResult[];
+  adaptive_actions: AdaptiveActionAudit[];
+  adaptive_proposals: AdaptiveProposal[];
 };
 
 export type ReportVerification = {

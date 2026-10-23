@@ -18,6 +18,7 @@ import {
   honeyProbeRequest,
   isSimulatedEvent,
   type AdaptiveActionAudit,
+  type AdaptiveProposal,
   type DeceptionReadinessAssessment,
   type DetectionFinding,
   type EvidenceRecord,
@@ -29,6 +30,7 @@ import {
   type SelfTestResult,
   type Severity,
   type SourceProfile,
+  type WebDecoyConfig,
 } from '@/lib/honeyprobe-api';
 import {
   formatDateTime,
@@ -308,8 +310,7 @@ export function LiveDashboard() {
     assessment.error ??
     simulation.error;
   const data = overview.data;
-  const highCount =
-    (data?.severity_counts.high ?? 0) + (data?.severity_counts.critical ?? 0);
+  const highFindingCount = data?.suspicious_findings.value ?? 0;
 
   return (
     <LiveConsoleLayout>
@@ -328,16 +329,22 @@ export function LiveDashboard() {
         <LoadingPanel />
       ) : (
         <>
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <MetricCard
               label="Observed events"
               value={String(data?.total_events.value ?? 0)}
               detail="Non-demo records in the last 24 hours"
             />
             <MetricCard
-              label="High / critical"
-              value={String(data?.suspicious_events.value ?? highCount)}
-              detail="Stored high- and critical-severity events"
+              label="Detection findings"
+              value={String(data?.findings_count.value ?? 0)}
+              detail="Rule matches linked to persisted events"
+              accent="accent"
+            />
+            <MetricCard
+              label="High / critical findings"
+              value={String(highFindingCount)}
+              detail="Persisted findings in the selected window"
               accent="danger"
             />
             <MetricCard
@@ -788,6 +795,126 @@ export function LiveIncidents() {
   );
 }
 
+function WebDecoyAdaptiveWorkflow({ findings }: { findings: DetectionFinding[] }) {
+  const queryClient = useQueryClient();
+  const [findingId, setFindingId] = useState('');
+  const [responseProfile, setResponseProfile] =
+    useState<WebDecoyConfig['response_profile']>('contextual');
+  const [reason, setReason] = useState('');
+  const config = useQuery({
+    queryKey: ['honeyprobe', 'web-decoy-config'],
+    queryFn: () => honeyProbeRequest<WebDecoyConfig>('/api/decoys/web/config'),
+  });
+  const proposals = useQuery({
+    queryKey: ['honeyprobe', 'adaptive-proposals'],
+    queryFn: () => honeyProbeRequest<AdaptiveProposal[]>('/api/adaptations?limit=100'),
+  });
+  const refresh = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['honeyprobe', 'web-decoy-config'] }),
+      queryClient.invalidateQueries({ queryKey: ['honeyprobe', 'adaptive-proposals'] }),
+      queryClient.invalidateQueries({ queryKey: ['honeyprobe', 'operator-audit'] }),
+    ]);
+  };
+  const createProposal = useMutation({
+    mutationFn: () => honeyProbeRequest<AdaptiveProposal>('/api/adaptations', {
+      method: 'POST',
+      body: JSON.stringify({ finding_id: findingId || findings[0]?.id, response_profile: responseProfile, reason }),
+    }),
+    onSuccess: refresh,
+  });
+  const approve = useMutation({
+    mutationFn: (id: string) => honeyProbeRequest<AdaptiveProposal>(`/api/adaptations/${id}/approve`, { method: 'POST' }),
+    onSuccess: refresh,
+  });
+  const reject = useMutation({
+    mutationFn: (id: string) => honeyProbeRequest<AdaptiveProposal>(`/api/adaptations/${id}/reject`, { method: 'POST' }),
+    onSuccess: refresh,
+  });
+  const rollback = useMutation({
+    mutationFn: (id: string) => honeyProbeRequest<AdaptiveProposal>(`/api/adaptations/${id}/rollback`, { method: 'POST' }),
+    onSuccess: refresh,
+  });
+  const error = config.error ?? proposals.error ?? createProposal.error ?? approve.error ?? reject.error ?? rollback.error;
+  const selectedFindingId = findings.some((item) => item.id === findingId) ? findingId : findings[0]?.id ?? '';
+  const isBusy = createProposal.isPending || approve.isPending || reject.isPending || rollback.isPending;
+
+  return (
+    <Panel className="mb-5 overflow-hidden">
+      <div className="border-b border-border px-5 py-4 md:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Allowlisted web-decoy adaptation</h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Only changes the local web decoy’s visible response profile. Approval applies the change; rollback restores the previous profile if no newer change superseded it.
+            </p>
+          </div>
+          {config.data && <StatusPill value={`${config.data.response_profile} · v${config.data.version}`} tone="good" />}
+        </div>
+      </div>
+      {error && <div className="m-5 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive" role="alert">{error.message}</div>}
+      <div className="grid gap-3 p-5 md:grid-cols-[1.1fr_1fr_1.4fr_auto] md:items-end md:px-6">
+        <label className="block text-xs text-muted-foreground">
+          Triggering finding
+          <select className="mt-2 h-10 w-full rounded-lg border border-input bg-background px-3 text-foreground" value={selectedFindingId} onChange={(event) => setFindingId(event.target.value)} disabled={!findings.length}>
+            {!findings.length && <option value="">No non-test findings</option>}
+            {findings.map((finding) => <option key={finding.id} value={finding.id}>{finding.rule_name} · {finding.severity}</option>)}
+          </select>
+        </label>
+        <label className="block text-xs text-muted-foreground">
+          Response profile
+          <select className="mt-2 h-10 w-full rounded-lg border border-input bg-background px-3 text-foreground" value={responseProfile} onChange={(event) => setResponseProfile(event.target.value as WebDecoyConfig['response_profile'])}>
+            <option value="contextual">Contextual service notice</option>
+            <option value="baseline">Baseline</option>
+          </select>
+        </label>
+        <label className="block text-xs text-muted-foreground">
+          Reason
+          <input className="mt-2 h-10 w-full rounded-lg border border-input bg-background px-3 text-foreground" value={reason} maxLength={300} required onChange={(event) => setReason(event.target.value)} placeholder="Why is this response profile appropriate?" />
+        </label>
+        <button
+          type="button"
+          className="h-10 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+          disabled={isBusy || !selectedFindingId || !reason.trim() || !config.data || responseProfile === config.data.response_profile}
+          onClick={() => createProposal.mutate()}
+        >
+          {createProposal.isPending ? 'Proposing…' : 'Propose change'}
+        </button>
+      </div>
+      <div className="border-t border-border">
+        <div className="px-5 py-3 text-xs font-semibold md:px-6">Proposal and verification history</div>
+        {proposals.isLoading ? <p className="px-5 pb-5 text-xs text-muted-foreground">Loading proposal history…</p> : (proposals.data ?? []).length === 0 ? (
+          <p className="px-5 pb-5 text-xs text-muted-foreground">No allowlisted response-profile changes have been proposed.</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {proposals.data?.map((proposal) => (
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 md:px-6" key={proposal.id}>
+                <div className="min-w-[220px] flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="mono text-[10px]">{proposal.id}</span>
+                    <StatusPill value={proposal.status.replaceAll('_', ' ')} tone={proposal.status === 'applied' ? 'good' : proposal.status === 'pending' ? 'warn' : proposal.status === 'rolled_back' ? 'neutral' : 'bad'} />
+                    <span className="text-[10px] text-muted-foreground">verify: {proposal.verification_status}</span>
+                  </div>
+                  <p className="mt-1 text-xs">{proposal.previous_profile ?? config.data?.response_profile ?? '—'} → {proposal.response_profile}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{proposal.reason} · finding {proposal.finding_id} · evidence {proposal.evidence_id}</p>
+                  <p className="mt-1 text-[10px] text-muted-foreground">{proposal.verification_detail}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {proposal.status === 'pending' && <>
+                    <button type="button" className="rounded-lg bg-primary px-3 py-2 text-[11px] font-semibold text-primary-foreground disabled:opacity-50" disabled={isBusy} onClick={() => { if (window.confirm('Apply this allowlisted change to the isolated web decoy?')) approve.mutate(proposal.id); }}>Approve & apply</button>
+                    <button type="button" className="rounded-lg border border-border px-3 py-2 text-[11px] disabled:opacity-50" disabled={isBusy} onClick={() => { if (window.confirm('Reject this proposal without changing the decoy?')) reject.mutate(proposal.id); }}>Reject</button>
+                  </>}
+                  {proposal.status === 'applied' && <button type="button" className="rounded-lg border border-border px-3 py-2 text-[11px] disabled:opacity-50" disabled={isBusy} onClick={() => { if (window.confirm('Roll back this profile change? Rollback is refused if a newer configuration replaced it.')) rollback.mutate(proposal.id); }}>Rollback</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 export function LiveAdaptation() {
   const queryClient = useQueryClient();
   const [action, setAction] = useState<AdaptiveActionAudit['action']>('restrict_file_permissions');
@@ -849,10 +976,11 @@ export function LiveAdaptation() {
       <PageHeader
         eyebrow="03 / learning loop"
         title="Adaptation & audit"
-        description="Phase 3 previews and operator requests are recorded in SQLite. This interface cannot apply configuration changes."
+        description="An approval-gated, allowlisted response-profile change is supported only for the loopback web decoy. Phase 3 host/file permission actions remain dry-run only."
         action={<LiveModeBadge />}
       />
       {error && <ApiError error={error as Error} />}
+      <WebDecoyAdaptiveWorkflow findings={findings.data ?? []} />
       <Panel className="p-5 md:p-7">
         <div className="flex items-start gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-lg bg-accent/10 text-accent"><RefreshCw size={18} /></div>
@@ -1031,7 +1159,7 @@ export function LiveReports() {
       <PageHeader
         eyebrow="04 / evidence export"
         title="Reports & evidence"
-        description="Generate a persisted report from non-demo events and their stored evidence hashes. Demo records are excluded by the API."
+        description="Generate a persisted report from non-demo events, linked evidence and findings, latest self-test results, and adaptation previews. Demo records are excluded by the API."
         action={<LiveModeBadge />}
       />
       {(summary.error || generate.error) && <ApiError error={(summary.error ?? generate.error) as Error} />}
@@ -1039,7 +1167,7 @@ export function LiveReports() {
         <Panel className="p-5">
           <div className="flex items-center gap-2"><FileCheck2 size={17} className="text-primary" /><h2 className="text-sm font-semibold">Report data</h2></div>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            Events are loaded from the shared SQLite store. Evidence contains a canonical event snapshot, SHA-256 digest, and chain link.
+            Events, findings, evidence, self-test results, and preview-only adaptation records are read from the shared SQLite store.
           </p>
           <div className="mt-5 space-y-3 text-xs">
             <div className="flex justify-between border-b border-border pb-3"><span className="text-muted-foreground">Non-demo events available</span><span className="mono">{summary.data?.total_events ?? (summary.isLoading ? '…' : '—')}</span></div>
@@ -1068,6 +1196,7 @@ export function LiveReports() {
               <div className="mt-4 space-y-3 text-xs">
                 <div className="flex justify-between gap-3 border-b border-border pb-3"><span className="text-muted-foreground">Report ID</span><span className="mono break-all text-right">{activeReport.id}</span></div>
                 <div className="flex justify-between gap-3 border-b border-border pb-3"><span className="text-muted-foreground">Events / evidence</span><span className="mono">{activeReport.events.length} / {activeReport.evidence.length}</span></div>
+                <div className="flex justify-between gap-3 border-b border-border pb-3"><span className="text-muted-foreground">Findings / tests / previews / adaptations</span><span className="mono">{activeReport.findings.length} / {activeReport.self_tests.length} / {activeReport.adaptive_actions.length} / {activeReport.adaptive_proposals.length}</span></div>
                 <div className="flex justify-between gap-3"><span className="text-muted-foreground">Generated</span><span className="mono text-right">{formatDateTime(activeReport.generated_at)}</span></div>
               </div>
               <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-3">

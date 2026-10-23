@@ -59,6 +59,223 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(stored.status_code, 200)
         self.assertEqual(stored.json()["summary"], "SQLite persistence check")
 
+    def test_dynamic_rule_requires_review_test_and_links_finding_to_evidence(self) -> None:
+        actor = {"x-honeyprobe-operator": "dynamic-rule-test-operator"}
+        definition = {
+            "name": "Controlled admin route probe",
+            "category": "Custom reconnaissance",
+            "description": "Detect a known controlled event category and route.",
+            "severity": "high",
+            "conditions": [
+                {"field": "event_type", "operator": "equals", "value": "operator_rule_probe"},
+                {"field": "metadata.route", "operator": "equals", "value": "/admin"},
+            ],
+            "recommended_steps": ["Review the linked event and evidence."],
+        }
+        unauthenticated = self.client.post("/api/rules", json=definition)
+        self.assertEqual(unauthenticated.status_code, 403)
+
+        unsafe = {**definition, "conditions": [{"field": "summary", "operator": "regex", "value": ".*"}]}
+        rejected = self.client.post("/api/rules", json=unsafe, headers=actor)
+        self.assertEqual(rejected.status_code, 422)
+
+        created = self.client.post("/api/rules", json=definition, headers=actor)
+        self.assertEqual(created.status_code, 201, created.text)
+        rule = created.json()
+        self.assertFalse(rule["enabled"])
+        self.assertEqual(rule["version"], 1)
+
+        enable_before_test = self.client.patch(
+            f"/api/rules/{rule['id']}/enabled",
+            json={"enabled": True},
+            headers=actor,
+        )
+        self.assertEqual(enable_before_test.status_code, 409)
+
+        tested = self.client.post(
+            f"/api/rules/{rule['id']}/test",
+            json={
+                "source_type": "web",
+                "event_type": "operator_rule_probe",
+                "severity": "low",
+                "target": "/admin",
+                "summary": "Safe operator-authored rule test",
+                "metadata": {"route": "/admin"},
+                "environment": "test",
+                "ingestion_source": "rule_test",
+            },
+            headers=actor,
+        )
+        self.assertEqual(tested.status_code, 200, tested.text)
+        self.assertTrue(tested.json()["matched"])
+        self.assertEqual(len(tested.json()["matched_conditions"]), 2)
+
+        enabled = self.client.patch(
+            f"/api/rules/{rule['id']}/enabled",
+            json={"enabled": True},
+            headers=actor,
+        )
+        self.assertEqual(enabled.status_code, 200, enabled.text)
+        self.assertTrue(enabled.json()["enabled"])
+
+        metrics_before = self.client.get(
+            "/api/overview?include_demo=false"
+        ).json()
+        ingested = self.client.post(
+            "/api/events",
+            json={
+                "source_type": "web",
+                "event_type": "operator_rule_probe",
+                "severity": "low",
+                "target": "/admin",
+                "summary": "Controlled event to verify dynamic rule detection",
+                "metadata": {"route": "/admin"},
+                "environment": "local",
+                "ingestion_source": "dynamic-rule-integration-test",
+            },
+        )
+        self.assertEqual(ingested.status_code, 201, ingested.text)
+        event = ingested.json()
+        metrics_after = self.client.get(
+            "/api/overview?include_demo=false"
+        ).json()
+        self.assertGreaterEqual(
+            metrics_after["findings_count"]["value"],
+            metrics_before["findings_count"]["value"] + 1,
+        )
+        self.assertGreaterEqual(
+            metrics_after["suspicious_findings"]["value"],
+            metrics_before["suspicious_findings"]["value"] + 1,
+        )
+        self.assertEqual(
+            metrics_after["suspicious_events"]["value"],
+            metrics_before["suspicious_events"]["value"],
+            "a high-severity finding on a low-severity event must count as a finding, not alter the event-severity metric",
+        )
+        findings = self.client.get(
+            "/api/findings",
+            params={"event_id": event["id"], "include_demo": "true"},
+        )
+        self.assertEqual(findings.status_code, 200)
+        finding = next(item for item in findings.json() if item["rule_id"] == rule["id"])
+        self.assertEqual(finding["rule_name"], definition["name"])
+        self.assertEqual(finding["rule_version"], 1)
+        evidence = self.client.get(f"/api/evidence/{event['id']}?include_demo=true")
+        self.assertEqual(evidence.status_code, 200)
+        self.assertEqual(finding["evidence_id"], evidence.json()["id"])
+
+        edited_definition = {
+            **definition,
+            "description": "Updated rule version; activation requires another test.",
+        }
+        edited = self.client.put(
+            f"/api/rules/{rule['id']}",
+            json=edited_definition,
+            headers=actor,
+        )
+        self.assertEqual(edited.status_code, 200, edited.text)
+        self.assertEqual(edited.json()["version"], 2)
+        self.assertFalse(edited.json()["enabled"])
+
+        restored = self.client.post(
+            f"/api/rules/{rule['id']}/rollback/1",
+            headers=actor,
+        )
+        self.assertEqual(restored.status_code, 200, restored.text)
+        self.assertEqual(restored.json()["version"], 3)
+        self.assertFalse(restored.json()["enabled"])
+        history = self.client.get(f"/api/rules/{rule['id']}/versions")
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual([item["version"] for item in history.json()], [3, 2, 1])
+        audit = self.client.get("/api/audit?limit=100")
+        self.assertEqual(audit.status_code, 200)
+        self.assertTrue(any(item["action"] == "rule.rolled_back" for item in audit.json()))
+
+        archived = self.client.delete(f"/api/rules/{rule['id']}", headers=actor)
+        self.assertEqual(archived.status_code, 204)
+
+    def test_allowlisted_web_decoy_adaptation_requires_approval_and_supports_rollback(self) -> None:
+        actor = {"x-honeyprobe-operator": "adaptive-profile-test-operator"}
+        with patch.dict(os.environ, {"HONEYPROBE_ENV": "development"}):
+            observed = self.client.get("/decoy/%2e%2e/%2e%2e/adaptation-test")
+        self.assertEqual(observed.status_code, 404)
+        event_id = observed.headers["X-HoneyProbe-Event-ID"]
+        finding_response = self.client.get(
+            "/api/findings",
+            params={"event_id": event_id, "include_demo": "false"},
+        )
+        self.assertEqual(finding_response.status_code, 200)
+        finding = next(
+            item for item in finding_response.json()
+            if item["rule_name"] == "Path Traversal"
+        )
+        config = self.client.get("/api/decoys/web/config")
+        self.assertEqual(config.status_code, 200)
+        self.assertEqual(config.json()["response_profile"], "baseline")
+        self.assertEqual(config.json()["version"], 1)
+
+        unauthorized = self.client.post(
+            "/api/adaptations",
+            json={
+                "finding_id": finding["id"],
+                "response_profile": "contextual",
+                "reason": "controlled test",
+            },
+        )
+        self.assertEqual(unauthorized.status_code, 403)
+
+        proposed = self.client.post(
+            "/api/adaptations",
+            json={
+                "finding_id": finding["id"],
+                "response_profile": "contextual",
+                "reason": "Controlled test of an allowlisted response-profile change.",
+            },
+            headers=actor,
+        )
+        self.assertEqual(proposed.status_code, 201, proposed.text)
+        proposal = proposed.json()
+        self.assertEqual(proposal["status"], "pending")
+        self.assertEqual(proposal["evidence_id"], finding["evidence_id"])
+        self.assertEqual(
+            self.client.get("/api/decoys/web/config").json()["response_profile"],
+            "baseline",
+        )
+
+        applied = self.client.post(
+            f"/api/adaptations/{proposal['id']}/approve",
+            headers=actor,
+        )
+        self.assertEqual(applied.status_code, 200, applied.text)
+        self.assertEqual(applied.json()["status"], "applied")
+        self.assertEqual(applied.json()["verification_status"], "passed")
+        config_after_apply = self.client.get("/api/decoys/web/config").json()
+        self.assertEqual(config_after_apply["response_profile"], "contextual")
+        self.assertEqual(config_after_apply["version"], 2)
+        adapted_page = self.client.get("/decoy/about")
+        self.assertEqual(adapted_page.headers["X-HoneyProbe-Decoy-Profile"], "contextual")
+        self.assertIn("data-profile=\"contextual\"", adapted_page.text)
+
+        rolled_back = self.client.post(
+            f"/api/adaptations/{proposal['id']}/rollback",
+            headers=actor,
+        )
+        self.assertEqual(rolled_back.status_code, 200, rolled_back.text)
+        self.assertEqual(rolled_back.json()["status"], "rolled_back")
+        self.assertEqual(rolled_back.json()["verification_status"], "passed")
+        config_after_rollback = self.client.get("/api/decoys/web/config").json()
+        self.assertEqual(config_after_rollback["response_profile"], "baseline")
+        self.assertEqual(config_after_rollback["version"], 3)
+
+        proposals = self.client.get("/api/adaptations?limit=20")
+        self.assertEqual(proposals.status_code, 200)
+        self.assertTrue(any(item["id"] == proposal["id"] for item in proposals.json()))
+        audit = self.client.get("/api/audit?limit=100")
+        actions = {item["action"] for item in audit.json()}
+        self.assertIn("adaptation.proposed", actions)
+        self.assertIn("adaptation.approved_and_applied", actions)
+        self.assertIn("adaptation.rolled_back", actions)
+
     def test_web_decoy_records_without_accepting_passwords(self) -> None:
         response = self.client.post(
             "/api/decoys/web/interaction",
@@ -572,7 +789,10 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertEqual(html_response.status_code, 200)
         self.assertIn("HoneyProbe telemetry report", html_response.text)
 
-        test_run = self.client.post("/api/self-tests/run")
+        test_run = self.client.post(
+            "/api/self-tests/run",
+            headers={"x-honeyprobe-operator": "self-test-operator"},
+        )
         self.assertEqual(test_run.status_code, 200)
         run_result = test_run.json()
         self.assertEqual(run_result["failed"], 0)
@@ -593,7 +813,10 @@ class HoneyProbeApiTests(unittest.TestCase):
             "honeyprobe.self_tests.run_phase3_dry_run",
             side_effect=SelfTestBlocked("Phase 3 is unavailable."),
         ):
-            response = self.client.post("/api/self-tests/run")
+            response = self.client.post(
+                "/api/self-tests/run",
+                headers={"x-honeyprobe-operator": "self-test-operator"},
+            )
         self.assertEqual(response.status_code, 200)
         result = response.json()
         self.assertEqual(result["blocked"], 1)
@@ -742,7 +965,10 @@ class HoneyProbeApiTests(unittest.TestCase):
         )
         self.assertIn(event["id"], {item["id"] for item in overview.json()["recent_events"]})
 
-        report_response = self.client.post("/api/reports/generate")
+        report_response = self.client.post(
+            "/api/reports/generate",
+            headers={"x-honeyprobe-operator": "report-test-operator"},
+        )
         self.assertEqual(report_response.status_code, 201)
         report = report_response.json()
         self.assertFalse(report["summary"]["includes_demo_data"])

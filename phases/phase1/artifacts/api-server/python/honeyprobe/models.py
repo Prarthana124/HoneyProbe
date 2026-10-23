@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictModel(BaseModel):
@@ -174,6 +174,8 @@ class ActivityBucket(StrictModel):
 class Overview(StrictModel):
     total_events: Metric
     suspicious_events: Metric
+    findings_count: Metric
+    suspicious_findings: Metric
     unique_sessions: Metric
     active_decoys: Metric
     telemetry_health: Literal["healthy", "degraded"]
@@ -241,12 +243,150 @@ class DetectionFinding(StrictModel):
     severity: Literal["info", "low", "medium", "high", "critical"]
     reason: str
     created_at: datetime
+    rule_id: str | None = None
+    rule_version: int | None = None
+
+
+class DetectionRuleCondition(StrictModel):
+    field: str = Field(min_length=1, max_length=100)
+    operator: Literal["equals", "contains", "starts_with", "one_of"]
+    value: str | list[str]
+
+    @field_validator("field")
+    @classmethod
+    def validate_field(cls, value: str) -> str:
+        base_fields = {
+            "source_type",
+            "event_type",
+            "severity",
+            "target",
+            "summary",
+            "ingestion_source",
+        }
+        if value in base_fields:
+            return value
+        if value.startswith("metadata.") and all(
+            part and len(part) <= 100
+            for part in value.removeprefix("metadata.").split(".")
+        ):
+            return value
+        raise ValueError("field must name a supported event field or metadata key")
+
+    @model_validator(mode="after")
+    def validate_value(self) -> "DetectionRuleCondition":
+        if self.operator == "one_of":
+            if (
+                not isinstance(self.value, list)
+                or not 1 <= len(self.value) <= 20
+                or any(not item or len(item) > 200 for item in self.value)
+            ):
+                raise ValueError("one_of requires 1 to 20 non-empty values of at most 200 characters")
+        elif not isinstance(self.value, str) or not self.value or len(self.value) > 200:
+            raise ValueError("this operator requires a non-empty string of at most 200 characters")
+        return self
+
+
+class DetectionRuleDefinition(StrictModel):
+    name: str = Field(min_length=1, max_length=120)
+    category: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9 _.-]+$")
+    description: str = Field(min_length=1, max_length=500)
+    severity: Literal["info", "low", "medium", "high", "critical"]
+    conditions: list[DetectionRuleCondition] = Field(min_length=1, max_length=10)
+    recommended_steps: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("recommended_steps")
+    @classmethod
+    def validate_steps(cls, value: list[str]) -> list[str]:
+        if any(not step.strip() or len(step) > 240 for step in value):
+            raise ValueError("recommended steps must be non-empty and at most 240 characters")
+        return [step.strip() for step in value]
+
+
+class DetectionRuleRecord(DetectionRuleDefinition):
+    id: str
+    enabled: bool
+    version: int
+    created_at: datetime
+    updated_at: datetime
+    created_by: str
+    updated_by: str
+
+
+class DetectionRuleVersion(StrictModel):
+    version: int
+    action: Literal["created", "updated", "rollback"]
+    actor_id: str
+    created_at: datetime
+    definition: DetectionRuleDefinition
+
+
+class DetectionRuleTestResult(StrictModel):
+    rule_id: str
+    rule_version: int
+    matched: bool
+    tested_at: datetime
+    matched_conditions: list[str]
+
+
+class DetectionRuleStatusInput(StrictModel):
+    enabled: bool
+
+
+class DetectionRuleImportInput(StrictModel):
+    rules: list[DetectionRuleDefinition] = Field(min_length=1, max_length=50)
+
+
+class OperatorAuditRecord(StrictModel):
+    id: str
+    actor_id: str
+    action: str
+    entity_type: str
+    entity_id: str
+    occurred_at: datetime
+    details: dict[str, Any]
 
 
 class AdaptiveActionInput(StrictModel):
     action: Literal["restrict_file_permissions", "restrict_configuration_file_permissions"]
     finding_id: str = Field(min_length=1, max_length=128)
     reason: str = Field(min_length=1, max_length=300)
+
+
+class WebDecoyProfileInput(StrictModel):
+    finding_id: str = Field(min_length=1, max_length=128)
+    response_profile: Literal["baseline", "contextual"]
+    reason: str = Field(min_length=1, max_length=300)
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def strip_reason(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class WebDecoyConfig(StrictModel):
+    response_profile: Literal["baseline", "contextual"]
+    version: int
+    updated_at: datetime
+    updated_by: str
+
+
+class AdaptiveProposal(StrictModel):
+    id: str
+    finding_id: str
+    evidence_id: str
+    response_profile: Literal["baseline", "contextual"]
+    previous_profile: Literal["baseline", "contextual"] | None = None
+    status: Literal["pending", "applied", "rejected", "rolled_back"]
+    reason: str
+    proposed_by: str
+    proposed_at: datetime
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    applied_at: datetime | None = None
+    rolled_back_at: datetime | None = None
+    applied_version: int | None = None
+    verification_status: Literal["not_run", "passed", "failed"]
+    verification_detail: str
 
 
 class AdaptiveActionAudit(StrictModel):
@@ -324,6 +464,10 @@ class ReportDocument(StrictModel):
     summary: ReportSummary
     events: list[Event]
     evidence: list[EvidenceRecord]
+    findings: list[DetectionFinding] = Field(default_factory=list)
+    self_tests: list[SelfTestResult] = Field(default_factory=list)
+    adaptive_actions: list[AdaptiveActionAudit] = Field(default_factory=list)
+    adaptive_proposals: list[AdaptiveProposal] = Field(default_factory=list)
 
 
 class ReportVerification(StrictModel):

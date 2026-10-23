@@ -23,6 +23,12 @@ import {
   LiveReports,
   LiveVerification,
 } from '@/pages/live-security-pages';
+import { DemoRulesNotice, LiveRulesPage } from '@/pages/live-rules-page';
+import {
+  DemoOperationsNotice,
+  LiveAuditPage,
+  LiveOperationsPage,
+} from '@/pages/live-operations-pages';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -188,6 +194,15 @@ function ReportsRoute() {
 function VerificationRoute() {
   return <GuardedPage live={LiveVerification} demo={DemoVerification} />;
 }
+function RulesRoute() {
+  return <GuardedPage live={LiveRulesPage} demo={DemoRulesNotice} />;
+}
+function OperationsRoute() {
+  return <GuardedPage live={LiveOperationsPage} demo={DemoOperationsNotice} />;
+}
+function AuditRoute() {
+  return <GuardedPage live={LiveAuditPage} demo={DemoOperationsNotice} />;
+}
 
 function DemoOnlyRouter() {
   return (
@@ -198,6 +213,9 @@ function DemoOnlyRouter() {
         <Route path="/adaptation" component={DemoAdaptation} />
         <Route path="/reports" component={DemoReports} />
         <Route path="/verification" component={DemoVerification} />
+          <Route path="/rules" component={DemoRulesNotice} />
+          <Route path="/operations" component={DemoOperationsNotice} />
+          <Route path="/audit" component={DemoOperationsNotice} />
         <Route component={NotFound} />
       </Switch>
     </WouterRouter>
@@ -251,6 +269,9 @@ function ClerkRoutes() {
           <Route path="/adaptation" component={AdaptationRoute} />
           <Route path="/reports" component={ReportsRoute} />
           <Route path="/verification" component={VerificationRoute} />
+          <Route path="/rules" component={RulesRoute} />
+          <Route path="/operations" component={OperationsRoute} />
+          <Route path="/audit" component={AuditRoute} />
           <Route component={NotFound} />
         </Switch>
       </ErrorBoundary>

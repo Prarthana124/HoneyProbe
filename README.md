@@ -66,12 +66,22 @@ Other settings:
 
 ## Architecture and data boundaries
 
-- **Phase 1** provides the Express auth gateway, FastAPI endpoints, and canonical SQLite event store. It persists events, Phase 2 findings, evidence snapshots and hash links, reports, and dry-run audit records.
-- **Phase 2** detection rules are reused by the Cowrie import adapter. Findings are persisted separately and linked to their event and evidence record. Raw imported Cowrie messages are analyzed in memory and are not persisted.
-- **Phase 3** checks run through a read-only adapter that forces `apply_changes=False`; no live adaptive action route is exposed.
-- **Phase 4** reads live overview, event, finding, evidence, and reporting endpoints through the same-origin `/api` proxy. Demo fixtures are separate and only shown through **View clearly labeled demo preview**. API errors do not fall back to demo data.
+- **Phase 1** provides the Express auth gateway, FastAPI endpoints, and canonical SQLite event store. It persists observed events, built-in and operator-defined findings, linked evidence, rule versions, self-test results, reports, adaptation history, and operator audit records.
+- **Phase 2** provides bounded built-in detection functions reused by event ingestion and the Cowrie import adapter. Operator-defined rules use a separate, declarative allowlist; they cannot run arbitrary code or regular expressions.
+- **Phase 3** checks run through a read-only adapter that forces `apply_changes=False`; filesystem and host-hardening actions remain preview-only. A separate, approval-gated path can change only the local web decoy's allowlisted response profile.
+- **Phase 4** reads live overview, event, finding, evidence, rule, self-test, adaptation, audit, and reporting endpoints through the same-origin `/api` proxy. Demo fixtures are separate and only shown through **View clearly labeled demo preview**. API errors do not fall back to demo data.
 
-The fictional web decoy is a real local HTTP interaction source served only by FastAPI's loopback listener at `127.0.0.1:8180/decoy`; it records bounded visits and feeds route text to Phase 2 in memory. It does not accept credentials, execute paths, or touch files, and it is not exposed through the public web preview. The database decoy remains a logical simulator. The integrated app does not start an SSH/Cowrie service or external threat feed. Evidence hashes are tamper-evident checksums, not keyed signatures or an independently administered immutable archive.
+The fictional web decoy is a real local HTTP interaction source served only by FastAPI's loopback listener at `127.0.0.1:8180/decoy`; it records bounded visits and feeds route text to detection in memory. It does not accept credentials, execute paths, or touch files, and it is not exposed through the public web preview. Operators can propose, approve, verify, reject, and roll back only the `baseline` and `contextual` response profiles; changes are persisted and audited. Database, SSH, and mobile are bounded interaction simulators, not listening services. Cowrie is an import adapter, not a running Cowrie daemon; there is no external threat feed. Evidence hashes are tamper-evident checksums, not keyed signatures or an independently administered immutable archive.
+
+## Detection, tests, and adaptation
+
+Events are stored with sanitized metadata and evidence in SQLite. Built-in detection and enabled custom rules run during ingestion; findings link to both the original event and its evidence. The console's findings metrics are counted from persisted finding records rather than inferred from event severity.
+
+Custom rules support bounded comparisons against known event fields and `metadata.*` values. Operators can create, edit, test against a non-persisted safe sample, enable only after a matching test, inspect version history, restore an earlier definition as a new disabled version, archive rules, and import/export JSON. Each write requires the authenticated gateway's operator identity and creates an audit entry.
+
+The decoy adaptation workflow is intentionally narrow: it changes a stored response profile on the loopback-only fictional web decoy. A proposal must reference a non-test finding and its evidence; an operator must approve it; the allowlisted setting is read back and verified; and rollback restores the prior profile only if no newer change superseded it. Host files, firewall rules, SSH, database services, and mobile devices are not modified. Phase 3 hardening requests remain dry-run only.
+
+The self-test endpoint runs safe local checks against schema, SQLite, ingestion, detection, reporting, the decoy profile, and Phase 3 dry-run behavior. Its results and the report's findings, tests, and adaptation history are persisted. Reports are SHA-256 verified against their canonical stored JSON content; verification does not provide an external immutable archive.
 
 For the phase entry points, API routes, storage details, and test locations, see [`docs/PHASE_INTEGRATION.md`](docs/PHASE_INTEGRATION.md).
 

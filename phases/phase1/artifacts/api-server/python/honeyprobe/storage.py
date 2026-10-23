@@ -80,11 +80,85 @@ CREATE TABLE IF NOT EXISTS detection_findings (
     severity TEXT NOT NULL CHECK (severity IN ('info', 'low', 'medium', 'high', 'critical')),
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    rule_id TEXT,
+    rule_version INTEGER,
     UNIQUE(event_id, detector, rule_name)
 );
 CREATE INDEX IF NOT EXISTS idx_findings_event ON detection_findings(event_id);
 CREATE INDEX IF NOT EXISTS idx_findings_evidence ON detection_findings(evidence_id);
 CREATE INDEX IF NOT EXISTS idx_findings_created ON detection_findings(created_at DESC);
+CREATE TABLE IF NOT EXISTS detection_rules (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    description TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK (severity IN ('info', 'low', 'medium', 'high', 'critical')),
+    conditions_json TEXT NOT NULL,
+    recommended_steps_json TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_detection_rules_enabled ON detection_rules(enabled, deleted_at);
+CREATE TABLE IF NOT EXISTS detection_rule_versions (
+    rule_id TEXT NOT NULL REFERENCES detection_rules(id),
+    version INTEGER NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('created', 'updated', 'rollback')),
+    actor_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    PRIMARY KEY(rule_id, version)
+);
+CREATE TABLE IF NOT EXISTS detection_rule_tests (
+    id TEXT PRIMARY KEY,
+    rule_id TEXT NOT NULL REFERENCES detection_rules(id),
+    rule_version INTEGER NOT NULL,
+    actor_id TEXT NOT NULL,
+    tested_at TEXT NOT NULL,
+    matched INTEGER NOT NULL CHECK (matched IN (0, 1))
+);
+CREATE INDEX IF NOT EXISTS idx_detection_rule_tests_latest
+    ON detection_rule_tests(rule_id, rule_version, tested_at DESC);
+CREATE TABLE IF NOT EXISTS operator_audit_log (
+    id TEXT PRIMARY KEY,
+    actor_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    details_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_operator_audit_time ON operator_audit_log(occurred_at DESC);
+CREATE TABLE IF NOT EXISTS web_decoy_config (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    response_profile TEXT NOT NULL CHECK (response_profile IN ('baseline', 'contextual')),
+    version INTEGER NOT NULL CHECK (version >= 1),
+    updated_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS adaptive_proposals (
+    id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL REFERENCES detection_findings(id),
+    evidence_id TEXT NOT NULL REFERENCES evidence_records(id),
+    response_profile TEXT NOT NULL CHECK (response_profile IN ('baseline', 'contextual')),
+    previous_profile TEXT CHECK (previous_profile IN ('baseline', 'contextual')),
+    status TEXT NOT NULL CHECK (status IN ('pending', 'applied', 'rejected', 'rolled_back')),
+    reason TEXT NOT NULL,
+    proposed_by TEXT NOT NULL,
+    proposed_at TEXT NOT NULL,
+    approved_by TEXT,
+    approved_at TEXT,
+    applied_at TEXT,
+    rolled_back_at TEXT,
+    applied_version INTEGER,
+    verification_status TEXT NOT NULL CHECK (verification_status IN ('not_run', 'passed', 'failed')),
+    verification_detail TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_adaptive_proposals_created ON adaptive_proposals(proposed_at DESC);
 CREATE TABLE IF NOT EXISTS adaptive_action_audit (
     id TEXT PRIMARY KEY,
     action TEXT NOT NULL CHECK (action IN ('restrict_file_permissions', 'restrict_configuration_file_permissions')),
@@ -183,6 +257,15 @@ def initialize_database() -> None:
     with db_connection() as connection:
         connection.executescript(SCHEMA)
         _migrate_self_test_result_statuses(connection)
+        _migrate_detection_finding_rule_columns(connection)
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO web_decoy_config(
+                singleton, response_profile, version, updated_at, updated_by
+            ) VALUES (1, 'baseline', 1, ?, 'system')
+            """,
+            (iso_utc(),),
+        )
         marker = connection.execute(
             "SELECT value FROM app_meta WHERE key = 'first_run_seeded'"
         ).fetchone()
@@ -217,6 +300,19 @@ def initialize_database() -> None:
         for row in missing_evidence:
             _record_event_evidence(connection, event_from_row(row))
         _backfill_phase2_findings(connection)
+
+
+def _migrate_detection_finding_rule_columns(connection: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(detection_findings)").fetchall()
+    }
+    if "rule_id" not in columns:
+        connection.execute("ALTER TABLE detection_findings ADD COLUMN rule_id TEXT")
+    if "rule_version" not in columns:
+        connection.execute(
+            "ALTER TABLE detection_findings ADD COLUMN rule_version INTEGER"
+        )
 
 
 def _migrate_self_test_result_statuses(connection: sqlite3.Connection) -> None:
@@ -443,7 +539,7 @@ def insert_detection_findings(
     if evidence is None:
         raise RuntimeError("Event evidence must exist before detection findings are stored.")
     for finding in findings:
-        rule_name = finding.get("category", "").strip()[:120]
+        rule_name = finding.get("rule_name", finding.get("category", "")).strip()[:120]
         severity = finding.get("severity")
         reason = finding.get("reason", "").strip()[:500]
         if (
@@ -455,17 +551,21 @@ def insert_detection_findings(
         connection.execute(
             """
             INSERT OR IGNORE INTO detection_findings(
-                id, event_id, evidence_id, detector, rule_name, severity, reason, created_at
-            ) VALUES (?, ?, ?, 'phase2', ?, ?, ?, ?)
+                id, event_id, evidence_id, detector, rule_name, severity, reason,
+                created_at, rule_id, rule_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 f"finding_{uuid.uuid4().hex}",
                 event.id,
                 evidence["id"],
+                finding.get("detector", "phase2"),
                 rule_name,
                 severity,
                 reason,
                 iso_utc(),
+                finding.get("rule_id"),
+                finding.get("rule_version"),
             ),
         )
 
@@ -487,7 +587,7 @@ def query_findings(
         params.append(severity)
     if not include_demo:
         clauses.append("events.environment != 'test'")
-    params.append(min(max(limit, 1), 500))
+    params.append(min(max(limit, 1), 10000))
     with db_connection() as connection:
         rows = connection.execute(
             f"""
@@ -509,9 +609,42 @@ def query_findings(
             severity=row["severity"],
             reason=row["reason"],
             created_at=datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00")),
+            rule_id=row["rule_id"],
+            rule_version=row["rule_version"],
         )
         for row in rows
     ]
+
+
+def count_findings(
+    *,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    include_demo: bool = False,
+) -> tuple[int, int]:
+    clauses = ["1 = 1"]
+    params: list[Any] = []
+    if since is not None:
+        clauses.append("events.timestamp >= ?")
+        params.append(iso_utc(since))
+    if until is not None:
+        clauses.append("events.timestamp <= ?")
+        params.append(iso_utc(until))
+    if not include_demo:
+        clauses.append("events.environment != 'test'")
+    with db_connection() as connection:
+        row = connection.execute(
+            f"""
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(CASE WHEN detection_findings.severity IN ('high', 'critical')
+                                      THEN 1 ELSE 0 END), 0) AS high_critical
+            FROM detection_findings
+            JOIN events ON events.id = detection_findings.event_id
+            WHERE {" AND ".join(clauses)}
+            """,
+            params,
+        ).fetchone()
+    return int(row["total"]), int(row["high_critical"])
 
 
 def get_detection_finding(finding_id: str) -> DetectionFinding | None:
@@ -535,6 +668,8 @@ def get_detection_finding(finding_id: str) -> DetectionFinding | None:
         severity=row["severity"],
         reason=row["reason"],
         created_at=datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00")),
+        rule_id=row["rule_id"],
+        rule_version=row["rule_version"],
     )
 
 

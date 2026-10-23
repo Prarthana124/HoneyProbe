@@ -221,7 +221,12 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
             preview_action["preview"]["recommendation"]["basis"]["evidence_sha256"],
         )
 
-        status, tests = self.request("POST", "/api/self-tests/run", {})
+        status, tests = self.request(
+            "POST",
+            "/api/self-tests/run",
+            {},
+            headers={"x-honeyprobe-operator": "process-restart-test-operator"},
+        )
         self.assertEqual(status, 200)
         self.assertEqual(tests["failed"], 0)
         phase3 = next(
@@ -231,7 +236,12 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
         )
         self.assertIn("none applied", phase3["diagnostic"])
 
-        status, report = self.request("POST", "/api/reports/generate", {})
+        status, report = self.request(
+            "POST",
+            "/api/reports/generate",
+            {},
+            headers={"x-honeyprobe-operator": "process-restart-test-operator"},
+        )
         self.assertEqual(status, 201)
         self.assertIn(event["id"], {item["id"] for item in report["events"]})
         self.assertFalse(report["summary"]["includes_demo_data"])

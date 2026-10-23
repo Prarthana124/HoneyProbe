@@ -16,7 +16,7 @@ from honeyprobe.models import (
     SourceProfile,
     SourceProfileActivity,
 )
-from honeyprobe.storage import get_investigation_status, utc_now
+from honeyprobe.storage import count_findings, get_investigation_status, utc_now
 
 SEVERITY_ORDER = {"info": 1, "low": 2, "medium": 3, "high": 4, "critical": 5}
 SEVERITIES = ("info", "low", "medium", "high", "critical")
@@ -169,15 +169,28 @@ def make_activity_buckets(
     return result
 
 
-def make_overview(events: list[Event], *, since: datetime | None, until: datetime | None) -> Overview:
+def make_overview(
+    events: list[Event],
+    *,
+    since: datetime | None,
+    until: datetime | None,
+    include_demo: bool = False,
+) -> Overview:
     sessions = make_sessions(events)
     decoys = decoy_catalog(events)
     suspicious = sum(event.severity in {"high", "critical"} for event in events)
+    total_findings, suspicious_findings = count_findings(
+        since=since,
+        until=until,
+        include_demo=include_demo,
+    )
     connected = sum(decoy.status == "connected" for decoy in decoys)
     severity_counts = count_by([event.severity for event in events], SEVERITIES)
     return Overview(
         total_events=Metric(value=len(events), context="Persisted records in the selected window"),
         suspicious_events=Metric(value=suspicious, context="High and critical stored events"),
+        findings_count=Metric(value=total_findings, context="Persisted rule matches in the selected window"),
+        suspicious_findings=Metric(value=suspicious_findings, context="High and critical persisted findings"),
         unique_sessions=Metric(value=len(sessions), context="Sessions correlated by shared session ID"),
         active_decoys=Metric(value=connected, context="Independently connected services; demo modules excluded"),
         telemetry_health="healthy",

@@ -21,6 +21,7 @@ from honeyprobe.models import (
     WebInteractionInput,
 )
 from honeyprobe.phase2_adapter import analyze_phase2_message
+from honeyprobe.rules import evaluate_event_rules
 from honeyprobe.storage import (
     db_connection,
     insert_detection_findings,
@@ -110,8 +111,10 @@ def _persist(
     }
     with db_connection() as connection:
         persisted_event = insert_event(connection, event, fingerprint=fingerprint)
-        if phase2_findings:
-            insert_detection_findings(connection, persisted_event, phase2_findings)
+        findings = list(phase2_findings or [])
+        findings.extend(evaluate_event_rules(connection, persisted_event))
+        if findings:
+            insert_detection_findings(connection, persisted_event, findings)
         return persisted_event
 
 

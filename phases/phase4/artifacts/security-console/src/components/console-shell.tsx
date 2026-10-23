@@ -1,14 +1,17 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { Activity, BadgeCheck, ChevronRight, CircleDot, FileCheck2, FileText, LayoutDashboard, Menu, ShieldAlert, X } from 'lucide-react';
+import { Activity, BadgeCheck, Boxes, ChevronRight, CircleDot, FileCheck2, FileText, FlaskConical, LayoutDashboard, ListChecks, Menu, ScrollText, ShieldAlert, X } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import { initialSystemStatus, type SystemStatus } from '@/data/demo-data';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/incidents', label: 'Incidents/Attacks', icon: ShieldAlert },
+  { href: '/rules', label: 'Attack Rules', icon: ListChecks },
+  { href: '/operations', label: 'Decoys & Self-tests', icon: FlaskConical },
   { href: '/adaptation', label: 'Adaptation History', icon: Activity },
   { href: '/reports', label: 'Reports', icon: FileText },
   { href: '/verification', label: 'SHA-256 Verification', icon: FileCheck2 },
+  { href: '/audit', label: 'Audit Log', icon: ScrollText },
 ];
 
 export function useSystemStatus() {
@@ -54,7 +57,7 @@ export function ConsoleShell({
             <button onClick={() => setMobileOpen(false)} className="rounded-md p-1 text-muted-foreground hover:bg-sidebar-accent md:hidden" data-testid="button-close-navigation"><X size={17} /></button>
           </div>
           <div className="mt-8 px-2"><div className="mono text-[10px] uppercase tracking-[.2em] text-muted-foreground">Command center</div></div>
-          <nav className="mt-3 space-y-1">
+          <nav className="mt-3 max-h-[calc(100dvh-235px)] space-y-1 overflow-y-auto">
             {navItems.map((item) => {
               const active = routePath === item.href;
               const Icon = item.icon;
@@ -91,8 +94,8 @@ export function PageHeader({ eyebrow, title, description, action }: { eyebrow: s
   return <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div className="console-enter"><div className="mono mb-2 text-[10px] uppercase tracking-[.22em] text-primary">{eyebrow}</div><h1 className="text-3xl font-semibold tracking-[-.03em] text-foreground md:text-[38px]">{title}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p></div>{action && <div className="console-enter delay-1">{action}</div>}</div>;
 }
 
-export function Panel({ children, className = '', testId }: { children: ReactNode; className?: string; testId?: string }) {
-  return <section data-testid={testId} className={`rounded-xl border border-card-border bg-card/90 shadow-[0_12px_30px_hsl(210_40%_3%/.12)] ${className}`}>{children}</section>;
+export function Panel({ children, className = '', testId, role }: { children: ReactNode; className?: string; testId?: string; role?: 'alert' | 'status' | 'region' }) {
+  return <section role={role} data-testid={testId} className={`rounded-xl border border-card-border bg-card/90 shadow-[0_12px_30px_hsl(210_40%_3%/.12)] ${className}`}>{children}</section>;
 }
 
 export function StatusPill({ value, tone }: { value: string; tone?: 'good' | 'warn' | 'bad' | 'neutral' }) {

@@ -27,6 +27,14 @@ from honeyprobe.analytics import (
     make_report,
     make_source_profiles,
 )
+from honeyprobe.adaptive_deception import (
+    approve_adaptive_proposal,
+    create_adaptive_proposal,
+    get_web_decoy_config,
+    list_adaptive_proposals,
+    reject_adaptive_proposal,
+    rollback_adaptive_proposal,
+)
 from honeyprobe.assessment import make_deception_readiness_assessment
 from honeyprobe.decoys import decoy_catalog
 from honeyprobe.ingestion import (
@@ -44,8 +52,15 @@ from honeyprobe.models import (
     Analytics,
     AdaptiveActionAudit,
     AdaptiveActionInput,
+    AdaptiveProposal,
     CowrieImportInput,
     DetectionFinding,
+    DetectionRuleDefinition,
+    DetectionRuleRecord,
+    DetectionRuleStatusInput,
+    DetectionRuleTestResult,
+    DetectionRuleVersion,
+    DetectionRuleImportInput,
     DatabaseInteractionInput,
     DeceptionReadinessAssessment,
     Decoy,
@@ -64,6 +79,7 @@ from honeyprobe.models import (
     ReportVerification,
     SelfTestResult,
     SelfTestRun,
+    OperatorAuditRecord,
     Session,
     SessionDetail,
     SessionPage,
@@ -72,6 +88,8 @@ from honeyprobe.models import (
     SourceProfile,
     SshInteractionInput,
     WebInteractionInput,
+    WebDecoyConfig,
+    WebDecoyProfileInput,
 )
 from honeyprobe.reports import events_to_csv, report_to_html
 from honeyprobe.self_tests import previous_self_tests, run_self_tests
@@ -92,6 +110,19 @@ from honeyprobe.storage import (
     set_investigation_status,
     utc_now,
     verify_generated_report,
+)
+from honeyprobe.rules import (
+    audit_operator_action,
+    create_rule,
+    delete_rule,
+    get_rule,
+    list_audit_records,
+    list_rules,
+    rollback_rule,
+    rule_versions,
+    set_rule_enabled,
+    test_rule,
+    update_rule,
 )
 from honeyprobe.web_decoy import PAGES as WEB_DECOY_PAGES
 
@@ -230,18 +261,28 @@ def _local_decoy_response(
         source_address=source_address,
         network_metadata=network_metadata,
     )
+    decoy_config = get_web_decoy_config()
+    profile_notice = (
+        '<aside data-profile="contextual"><p>Service notices and account help are available from this fictional portal.</p></aside>'
+        if decoy_config.response_profile == "contextual"
+        else ""
+    )
     content = (
         "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         "<title>Northstar Cloud</title>"
         '<body style="font:16px system-ui;max-width:48rem;margin:4rem auto;padding:0 1rem">'
-        f"{WEB_DECOY_PAGES.get(normalized_route, '<h1>Page not found</h1>')}"
+        f"{profile_notice}{WEB_DECOY_PAGES.get(normalized_route, '<h1>Page not found</h1>')}"
         "</body></html>"
     )
     return HTMLResponse(
         content=content,
         status_code=200 if known_route else 404,
-        headers={"X-HoneyProbe-Event-ID": event.id},
+        headers={
+            "X-HoneyProbe-Event-ID": event.id,
+            "X-HoneyProbe-Decoy-Profile": decoy_config.response_profile,
+            "X-HoneyProbe-Decoy-Config-Version": str(decoy_config.version),
+        },
     )
 
 
@@ -482,7 +523,12 @@ def overview(
     end = until or utc_now()
     start = since or (end - timedelta(hours=24))
     events = all_events(since=start, until=end, include_demo=include_demo)
-    return make_overview(events, since=start, until=end)
+    return make_overview(
+        events,
+        since=start,
+        until=end,
+        include_demo=include_demo,
+    )
 
 
 @api.get("/events", response_model=EventPage)
@@ -600,20 +646,196 @@ def session_detail(session_id: str) -> SessionDetail:
 
 
 @api.patch("/sessions/{session_id}", response_model=Session)
-def update_session(session_id: str, payload: SessionStatusInput) -> Session:
+def update_session(
+    session_id: str, payload: SessionStatusInput, request: Request
+) -> Session:
+    actor_id = _verified_operator_id(request)
     events, _ = query_events(limit=10000, query=session_id)
     events = [event for event in events if event.session_id == session_id]
     if not events:
         raise HTTPException(status_code=404, detail="Session not found.")
     set_investigation_status(session_id, payload.investigation_status)
+    audit_operator_action(
+        actor_id=actor_id,
+        action="incident.status_updated",
+        entity_type="session",
+        entity_id=session_id,
+        details={"investigation_status": payload.investigation_status},
+    )
     from honeyprobe.analytics import make_sessions
 
     return make_sessions(events)[0]
 
 
+def _verified_operator_id(request: Request) -> str:
+    actor_id = request.headers.get("x-honeyprobe-operator", "").strip()
+    if not actor_id:
+        raise HTTPException(
+            status_code=403, detail="A verified operator identity is required."
+        )
+    return actor_id
+
+
+@api.get("/rules", response_model=list[DetectionRuleRecord])
+def get_detection_rules() -> list[DetectionRuleRecord]:
+    return list_rules()
+
+
+@api.post("/rules", response_model=DetectionRuleRecord, status_code=201)
+def create_detection_rule(
+    payload: DetectionRuleDefinition, request: Request
+) -> DetectionRuleRecord:
+    return create_rule(payload, _verified_operator_id(request))
+
+
+@api.get("/rules/export")
+def export_detection_rules() -> JSONResponse:
+    definitions = [
+        rule.model_dump(
+            mode="json",
+            include={
+                "name",
+                "category",
+                "description",
+                "severity",
+                "conditions",
+                "recommended_steps",
+            },
+        )
+        for rule in list_rules()
+    ]
+    return JSONResponse({"schema_version": 1, "rules": definitions})
+
+
+@api.post("/rules/import", response_model=list[DetectionRuleRecord], status_code=201)
+def import_detection_rules(
+    payload: DetectionRuleImportInput, request: Request
+) -> list[DetectionRuleRecord]:
+    actor_id = _verified_operator_id(request)
+    return [create_rule(definition, actor_id) for definition in payload.rules]
+
+
+@api.get(
+    "/rules/{rule_id}/versions",
+    response_model=list[DetectionRuleVersion],
+)
+def get_detection_rule_versions(rule_id: str) -> list[DetectionRuleVersion]:
+    return rule_versions(rule_id)
+
+
+@api.post(
+    "/rules/{rule_id}/test",
+    response_model=DetectionRuleTestResult,
+)
+def test_detection_rule(
+    rule_id: str, payload: EventInput, request: Request
+) -> DetectionRuleTestResult:
+    return test_rule(rule_id, payload, _verified_operator_id(request))
+
+
+@api.put("/rules/{rule_id}", response_model=DetectionRuleRecord)
+def replace_detection_rule(
+    rule_id: str, payload: DetectionRuleDefinition, request: Request
+) -> DetectionRuleRecord:
+    return update_rule(rule_id, payload, _verified_operator_id(request))
+
+
+@api.patch(
+    "/rules/{rule_id}/enabled",
+    response_model=DetectionRuleRecord,
+)
+def enable_detection_rule(
+    rule_id: str, payload: DetectionRuleStatusInput, request: Request
+) -> DetectionRuleRecord:
+    return set_rule_enabled(rule_id, payload.enabled, _verified_operator_id(request))
+
+
+@api.post(
+    "/rules/{rule_id}/rollback/{version}",
+    response_model=DetectionRuleRecord,
+)
+def rollback_detection_rule(
+    rule_id: str, version: int, request: Request
+) -> DetectionRuleRecord:
+    return rollback_rule(rule_id, version, _verified_operator_id(request))
+
+
+@api.delete("/rules/{rule_id}", status_code=204)
+def remove_detection_rule(rule_id: str, request: Request) -> Response:
+    delete_rule(rule_id, _verified_operator_id(request))
+    return Response(status_code=204)
+
+
+@api.get("/audit", response_model=list[OperatorAuditRecord])
+def operator_audit(
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[OperatorAuditRecord]:
+    return list_audit_records(limit)
+
+
 @api.get("/decoys", response_model=list[Decoy])
 def get_decoys() -> list[Decoy]:
     return decoy_catalog(all_events())
+
+
+@api.get("/decoys/web/config", response_model=WebDecoyConfig)
+def web_decoy_config() -> WebDecoyConfig:
+    return get_web_decoy_config()
+
+
+@api.get("/adaptations", response_model=list[AdaptiveProposal])
+def list_adaptations(
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[AdaptiveProposal]:
+    return list_adaptive_proposals(limit)
+
+
+@api.post("/adaptations", response_model=AdaptiveProposal, status_code=201)
+def propose_adaptation(
+    payload: WebDecoyProfileInput, request: Request
+) -> AdaptiveProposal:
+    return create_adaptive_proposal(
+        finding_id=payload.finding_id,
+        response_profile=payload.response_profile,
+        reason=payload.reason,
+        actor_id=_verified_operator_id(request),
+    )
+
+
+@api.post(
+    "/adaptations/{proposal_id}/approve",
+    response_model=AdaptiveProposal,
+)
+def approve_adaptation(
+    proposal_id: str, request: Request
+) -> AdaptiveProposal:
+    return approve_adaptive_proposal(
+        proposal_id, _verified_operator_id(request)
+    )
+
+
+@api.post(
+    "/adaptations/{proposal_id}/reject",
+    response_model=AdaptiveProposal,
+)
+def reject_adaptation(
+    proposal_id: str, request: Request
+) -> AdaptiveProposal:
+    return reject_adaptive_proposal(
+        proposal_id, _verified_operator_id(request)
+    )
+
+
+@api.post(
+    "/adaptations/{proposal_id}/rollback",
+    response_model=AdaptiveProposal,
+)
+def rollback_adaptation(
+    proposal_id: str, request: Request
+) -> AdaptiveProposal:
+    return rollback_adaptive_proposal(
+        proposal_id, _verified_operator_id(request)
+    )
 
 
 @api.get("/assessment/deception", response_model=DeceptionReadinessAssessment)
@@ -750,8 +972,21 @@ def get_self_tests() -> list[SelfTestResult]:
 
 
 @api.post("/self-tests/run", response_model=SelfTestRun)
-def execute_self_tests() -> SelfTestRun:
-    return run_self_tests()
+def execute_self_tests(request: Request) -> SelfTestRun:
+    actor_id = _verified_operator_id(request)
+    result = run_self_tests()
+    audit_operator_action(
+        actor_id=actor_id,
+        action="self_test.run",
+        entity_type="self_test_suite",
+        entity_id="phase1-phase2-phase3",
+        details={
+            "passed": result.passed,
+            "failed": result.failed,
+            "blocked": result.blocked,
+        },
+    )
+    return result
 
 
 @api.get("/reports/summary", response_model=ReportSummary)
@@ -830,7 +1065,8 @@ def report_html(
 
 
 @api.post("/reports/generate", response_model=ReportDocument, status_code=201)
-def generate_persisted_report() -> ReportDocument:
+def generate_persisted_report(request: Request) -> ReportDocument:
+    actor_id = _verified_operator_id(request)
     generated_at = utc_now()
     events = all_events(limit=10000, include_demo=False)
     summary = make_report(events, since=None, until=generated_at)
@@ -847,6 +1083,20 @@ def generate_persisted_report() -> ReportDocument:
         "summary": summary.model_dump(mode="json"),
         "events": [event.model_dump(mode="json") for event in events],
         "evidence": [record.model_dump(mode="json") for record in evidence],
+        "findings": [
+            finding.model_dump(mode="json")
+            for finding in query_findings(include_demo=False, limit=10000)
+            if finding.event_id in event_ids
+        ],
+        "self_tests": [
+            result.model_dump(mode="json") for result in previous_self_tests()
+        ],
+        "adaptive_actions": [
+            item.model_dump(mode="json") for item in read_adaptive_action_audit(500)
+        ],
+        "adaptive_proposals": [
+            item.model_dump(mode="json") for item in list_adaptive_proposals(500)
+        ],
     }
     document = ReportDocument(**unsigned_document, sha256="")
     canonical_document = json.dumps(
@@ -858,6 +1108,17 @@ def generate_persisted_report() -> ReportDocument:
     digest = hashlib.sha256(canonical_document.encode("utf-8")).hexdigest()
     document = document.model_copy(update={"sha256": digest})
     save_generated_report(document)
+    audit_operator_action(
+        actor_id=actor_id,
+        action="report.generated",
+        entity_type="report",
+        entity_id=report_id,
+        details={
+            "sha256": digest,
+            "event_count": len(events),
+            "finding_count": len(unsigned_document["findings"]),
+        },
+    )
     return document
 
 
@@ -981,12 +1242,19 @@ def adaptive_action_dry_run(
             finding_id=finding.id,
             evidence_id=evidence.id,
         )
+        audit_operator_action(
+            actor_id=actor_id,
+            action="adaptation.preview_failed",
+            entity_type="finding",
+            entity_id=finding.id,
+            details={"action": payload.action, "error": type(error).__name__},
+        )
         raise HTTPException(
             status_code=503,
             detail="The dry-run preview failed and was recorded in the audit log.",
         ) from error
 
-    return create_adaptive_action_audit(
+    audit_record = create_adaptive_action_audit(
         action=payload.action,
         actor_id=actor_id,
         reason=payload.reason,
@@ -995,6 +1263,18 @@ def adaptive_action_dry_run(
         finding_id=finding.id,
         evidence_id=evidence.id,
     )
+    audit_operator_action(
+        actor_id=actor_id,
+        action="adaptation.previewed",
+        entity_type="finding",
+        entity_id=finding.id,
+        details={
+            "action": payload.action,
+            "result": audit_record.result,
+            "applied": audit_record.applied,
+        },
+    )
+    return audit_record
 
 
 def _demo_generation_enabled() -> bool:

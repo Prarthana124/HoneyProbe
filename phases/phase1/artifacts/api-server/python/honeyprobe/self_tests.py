@@ -5,6 +5,7 @@ from datetime import timezone
 from typing import Callable
 
 from honeyprobe.assessment import make_deception_readiness_assessment
+from honeyprobe.adaptive_deception import verify_web_decoy_config
 from honeyprobe.models import EventInput, SelfTestResult, SelfTestRun
 from honeyprobe.phase2_adapter import analyze_phase2_message
 from honeyprobe.phase3_adapter import run_phase3_dry_run
@@ -105,6 +106,11 @@ def run_self_tests() -> SelfTestRun:
             "The separate fictional decoy route set is available.",
         ),
         (
+            "Web-decoy adaptive configuration",
+            _web_decoy_profile_check,
+            "The active response profile is allowlisted and versioned.",
+        ),
+        (
             "Dashboard event retrieval",
             lambda: query_events(limit=1),
             "The dashboard query returned a valid event page.",
@@ -180,6 +186,13 @@ def _validate_csv_output() -> None:
     output = events_to_csv(events)
     if not output.startswith("id,timestamp_utc,"):
         raise RuntimeError("CSV header did not match the event export schema")
+
+
+def _web_decoy_profile_check() -> str:
+    passed, diagnostic = verify_web_decoy_config()
+    if not passed:
+        raise RuntimeError("The web-decoy response profile failed its allowlist check.")
+    return diagnostic
 
 
 def _phase2_detection_check() -> str:
