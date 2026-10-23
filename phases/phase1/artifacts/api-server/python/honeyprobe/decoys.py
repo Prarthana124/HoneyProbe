@@ -29,12 +29,12 @@ def decoy_catalog(events: list[Event]) -> list[Decoy]:
         Decoy(
             id="ssh",
             name="SSH / Cowrie",
-            integration_type="Cowrie JSON log adapter",
-            status="not_configured",
-            description="No Cowrie service is running. The JSON log importer validates and normalizes sample records.",
+            integration_type="Controlled event simulator + Cowrie JSON log adapter",
+            status="demo_mode",
+            description="Records fixed SSH interaction categories for local testing. It does not run an SSH listener, collect credentials, or execute commands; Cowrie JSON import remains optional.",
             event_count=counts["ssh"],
             last_event_at=last_seen.get("ssh"),
-            setup_instructions="Run Cowrie in an isolated lab host or container; do not expose an SSH honeypot from this app. POST normalized JSON entries to /api/imports/cowrie.",
+            setup_instructions="Use /api/decoys/ssh/interaction for controlled local scenarios. Optional Cowrie records can be imported through /api/imports/cowrie after review.",
         ),
         Decoy(
             id="database",
@@ -49,12 +49,12 @@ def decoy_catalog(events: list[Event]) -> list[Decoy]:
         Decoy(
             id="mobile",
             name="Mobile / Android",
-            integration_type="Future emulator adapter",
-            status="not_configured",
-            description="No Android emulator or mobile telemetry source is configured.",
+            integration_type="Controlled event simulator",
+            status="demo_mode",
+            description="Records fixed mobile interaction categories for local testing. It does not connect to an emulator or collect device identifiers or credentials.",
             event_count=counts["mobile"],
             last_event_at=last_seen.get("mobile"),
-            setup_instructions="Future adapter payloads should use the common event schema; connect a controlled emulator only in an isolated lab.",
+            setup_instructions="Use /api/decoys/mobile/interaction to create a synthetic event. No mobile device or external endpoint is contacted.",
         ),
     ]
 

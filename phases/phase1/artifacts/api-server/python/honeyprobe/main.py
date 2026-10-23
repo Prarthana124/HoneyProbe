@@ -27,12 +27,15 @@ from honeyprobe.analytics import (
     make_report,
     make_source_profiles,
 )
+from honeyprobe.assessment import make_deception_readiness_assessment
 from honeyprobe.decoys import decoy_catalog
 from honeyprobe.ingestion import (
     generate_demo_events,
     import_cowrie_events,
     record_database_interaction,
+    record_mobile_interaction,
     record_operator_event,
+    record_ssh_interaction,
     record_web_interaction,
     sanitize_metadata,
     sanitize_sensitive_text,
@@ -44,6 +47,7 @@ from honeyprobe.models import (
     CowrieImportInput,
     DetectionFinding,
     DatabaseInteractionInput,
+    DeceptionReadinessAssessment,
     Decoy,
     DemoGenerationInput,
     DemoGenerationResult,
@@ -53,6 +57,7 @@ from honeyprobe.models import (
     EventPage,
     EvidenceRecord,
     ImportResult,
+    MobileInteractionInput,
     Overview,
     ReportSummary,
     ReportDocument,
@@ -65,6 +70,7 @@ from honeyprobe.models import (
     SessionStatusInput,
     SystemHealth,
     SourceProfile,
+    SshInteractionInput,
     WebInteractionInput,
 )
 from honeyprobe.reports import events_to_csv, report_to_html
@@ -610,14 +616,29 @@ def get_decoys() -> list[Decoy]:
     return decoy_catalog(all_events())
 
 
+@api.get("/assessment/deception", response_model=DeceptionReadinessAssessment)
+def deception_readiness() -> DeceptionReadinessAssessment:
+    return make_deception_readiness_assessment()
+
+
 @api.post("/decoys/web/interaction", response_model=Event, status_code=201)
 def web_decoy_interaction(payload: WebInteractionInput) -> Event:
     return record_web_interaction(payload)
 
 
+@api.post("/decoys/ssh/interaction", response_model=Event, status_code=201)
+def ssh_decoy_interaction(payload: SshInteractionInput) -> Event:
+    return record_ssh_interaction(payload)
+
+
 @api.post("/decoys/database/interaction", response_model=Event, status_code=201)
 def database_decoy_interaction(payload: DatabaseInteractionInput) -> Event:
     return record_database_interaction(payload)
+
+
+@api.post("/decoys/mobile/interaction", response_model=Event, status_code=201)
+def mobile_decoy_interaction(payload: MobileInteractionInput) -> Event:
+    return record_mobile_interaction(payload)
 
 
 @api.post("/imports/cowrie", response_model=ImportResult, status_code=201)

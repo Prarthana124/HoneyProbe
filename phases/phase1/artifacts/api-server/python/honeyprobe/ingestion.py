@@ -16,6 +16,8 @@ from honeyprobe.models import (
     DemoGenerationInput,
     Event,
     EventInput,
+    MobileInteractionInput,
+    SshInteractionInput,
     WebInteractionInput,
 )
 from honeyprobe.phase2_adapter import analyze_phase2_message
@@ -216,22 +218,176 @@ def record_database_interaction(interaction: DatabaseInteractionInput) -> Event:
     target = interaction.target.strip()
     if not target.startswith("decoy://"):
         target = f"decoy://{target.lstrip('/')}"
+    phase2_detections = analyze_phase2_message(
+        f"database {interaction.operation_category.replace('_', ' ')}",
+        service="DATABASE",
+    )
+    severity_rank = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+    severity = max(
+        [severities[interaction.operation_category], *(item["severity"] for item in phase2_detections)],
+        key=severity_rank.__getitem__,
+    )
+    categories = list(dict.fromkeys(item["category"] for item in phase2_detections))
+    summary = f"Synthetic {interaction.operation_category} attempt against the isolated database decoy"
+    if categories:
+        summary += f"; Phase 2 indicators: {', '.join(categories)}"
     return _persist(
         {
             "source_type": "database",
             "event_type": f"database_{interaction.operation_category}_attempt",
-            "severity": severities[interaction.operation_category],
+            "severity": severity,
             "source_address": None,
             "target": target[:300],
             "session_id": interaction.session_id or f"db_{uuid.uuid4().hex[:16]}",
-            "summary": f"Synthetic {interaction.operation_category} attempt against the isolated database decoy",
+            "summary": summary,
             "metadata": {
                 "operation_category": interaction.operation_category,
                 "simulated": True,
                 "real_database_access": False,
+                "phase2_analysis": [
+                    {
+                        "category": item["category"],
+                        "severity": item["severity"],
+                        "reason": item["reason"],
+                    }
+                    for item in phase2_detections
+                ],
             },
         },
         ingestion_source="database_decoy_simulator",
+        phase2_findings=phase2_detections,
+    )
+
+
+def record_ssh_interaction(interaction: SshInteractionInput) -> Event:
+    event_configuration = {
+        "connection_attempt": (
+            "ssh_connection_attempt",
+            "low",
+            "SSH connection attempt",
+        ),
+        "banner_probe": (
+            "ssh_banner_probe",
+            "medium",
+            "ssh-2.0 protocol version probe",
+        ),
+        "authentication_attempt": (
+            "ssh_authentication_attempt",
+            "medium",
+            "ssh failed login authentication attempt",
+        ),
+        "command_attempt": (
+            "ssh_command_attempt",
+            "high",
+            "ssh command attempt",
+        ),
+    }
+    event_type, base_severity, detector_message = event_configuration[
+        interaction.interaction
+    ]
+    phase2_detections = analyze_phase2_message(detector_message, service="SSH")
+    severity_rank = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+    severity = max(
+        [base_severity, *(item["severity"] for item in phase2_detections)],
+        key=severity_rank.__getitem__,
+    )
+    categories = list(dict.fromkeys(item["category"] for item in phase2_detections))
+    summary = (
+        f"Simulated {interaction.interaction.replace('_', ' ')} recorded by the SSH "
+        "interaction simulator; no credentials or command text were collected or executed"
+    )
+    if categories:
+        summary += f"; Phase 2 indicators: {', '.join(categories)}"
+    return _persist(
+        {
+            "source_type": "ssh",
+            "event_type": event_type,
+            "severity": severity,
+            "source_address": None,
+            "target": "ssh://controlled-simulator",
+            "session_id": f"ssh_{uuid.uuid4().hex[:16]}",
+            "summary": summary,
+            "metadata": {
+                "interaction": interaction.interaction,
+                "simulated": True,
+                "raw_input_stored": False,
+                "credentials_collected": False,
+                "command_text_collected": False,
+                "command_execution": False,
+                "phase2_analysis": [
+                    {
+                        "category": item["category"],
+                        "severity": item["severity"],
+                        "reason": item["reason"],
+                    }
+                    for item in phase2_detections
+                ],
+            },
+        },
+        ingestion_source="ssh_interaction_simulator",
+        phase2_findings=phase2_detections,
+    )
+
+
+def record_mobile_interaction(interaction: MobileInteractionInput) -> Event:
+    event_configuration = {
+        "app_open": ("mobile_app_open", "info", "mobile application opened"),
+        "deep_link_probe": (
+            "mobile_deep_link_probe",
+            "medium",
+            "mobile deep-link probe",
+        ),
+        "permission_probe": (
+            "mobile_permission_probe",
+            "medium",
+            "android permission probe",
+        ),
+        "api_probe": ("mobile_api_probe", "low", "mobile API probe"),
+    }
+    event_type, base_severity, detector_message = event_configuration[
+        interaction.interaction
+    ]
+    phase2_detections = analyze_phase2_message(detector_message, service="MOBILE")
+    severity_rank = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+    severity = max(
+        [base_severity, *(item["severity"] for item in phase2_detections)],
+        key=severity_rank.__getitem__,
+    )
+    categories = list(dict.fromkeys(item["category"] for item in phase2_detections))
+    summary = (
+        f"Simulated {interaction.interaction.replace('_', ' ')} recorded for the "
+        f"mobile decoy component '{interaction.component}'; no device identifiers or "
+        "mobile credentials were collected"
+    )
+    if categories:
+        summary += f"; Phase 2 indicators: {', '.join(categories)}"
+    return _persist(
+        {
+            "source_type": "mobile",
+            "event_type": event_type,
+            "severity": severity,
+            "source_address": None,
+            "target": f"mobile://app/{interaction.component}",
+            "session_id": f"mobile_{uuid.uuid4().hex[:16]}",
+            "summary": summary,
+            "metadata": {
+                "interaction": interaction.interaction,
+                "component": interaction.component,
+                "simulated": True,
+                "device_identifiers_collected": False,
+                "credentials_collected": False,
+                "phase2_analysis": [
+                    {
+                        "category": item["category"],
+                        "severity": item["severity"],
+                        "reason": item["reason"],
+                    }
+                    for item in phase2_detections
+                ],
+            },
+        },
+        ingestion_source="mobile_interaction_simulator",
+        phase2_findings=phase2_detections,
     )
 
 

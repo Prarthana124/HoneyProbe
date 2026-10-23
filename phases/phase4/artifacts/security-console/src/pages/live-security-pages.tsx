@@ -18,6 +18,7 @@ import {
   honeyProbeRequest,
   isSimulatedEvent,
   type AdaptiveActionAudit,
+  type DeceptionReadinessAssessment,
   type DetectionFinding,
   type EvidenceRecord,
   type EventPage,
@@ -212,7 +213,39 @@ function EventTable({
   );
 }
 
+const CONTROLLED_SCENARIOS: {
+  label: string;
+  path: string;
+  body: Record<string, string>;
+}[] = [
+  {
+    label: 'Web route observation',
+    path: '/api/decoys/web/interaction',
+    body: { route: '/service-probe', interaction: 'route_visit' },
+  },
+  {
+    label: 'SSH banner check',
+    path: '/api/decoys/ssh/interaction',
+    body: { interaction: 'banner_probe' },
+  },
+  {
+    label: 'Database schema check',
+    path: '/api/decoys/database/interaction',
+    body: {
+      operation_category: 'schema_probe',
+      target: 'decoy://ledger/schema',
+    },
+  },
+  {
+    label: 'Mobile deep-link check',
+    path: '/api/decoys/mobile/interaction',
+    body: { interaction: 'deep_link_probe', component: 'admin' },
+  },
+];
+
 export function LiveDashboard() {
+  const queryClient = useQueryClient();
+  const [simulationMessage, setSimulationMessage] = useState<string | null>(null);
   const overview = useQuery({
     queryKey: ['honeyprobe', 'overview', 'observed'],
     queryFn: () =>
@@ -245,12 +278,35 @@ export function LiveDashboard() {
       ),
     refetchInterval: 10_000,
   });
+  const assessment = useQuery({
+    queryKey: ['honeyprobe', 'assessment', 'controlled-simulation'],
+    queryFn: () =>
+      honeyProbeRequest<DeceptionReadinessAssessment>(
+        '/api/assessment/deception',
+      ),
+  });
+  const simulation = useMutation({
+    mutationFn: (scenario: {
+      path: string;
+      body: Record<string, string>;
+    }) =>
+      honeyProbeRequest<HoneyProbeEvent>(scenario.path, {
+        method: 'POST',
+        body: JSON.stringify(scenario.body),
+      }),
+    onSuccess: (event) => {
+      setSimulationMessage(`Recorded synthetic event ${event.id}.`);
+      void queryClient.invalidateQueries({ queryKey: ['honeyprobe'] });
+    },
+  });
   const error =
     overview.error ??
     events.error ??
     profiles.error ??
     findings.error ??
-    evidence.error;
+    evidence.error ??
+    assessment.error ??
+    simulation.error;
   const data = overview.data;
   const highCount =
     (data?.severity_counts.high ?? 0) + (data?.severity_counts.critical ?? 0);
@@ -295,6 +351,85 @@ export function LiveDashboard() {
               detail="Only independently connected services"
               accent="accent"
             />
+          </div>
+          <div className="mb-6 grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
+            <Panel className="p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Controlled lab scenarios</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Creates synthetic records only. No external target, credentials, device data, or commands are used.
+                  </p>
+                </div>
+                <ShieldCheck size={18} className="shrink-0 text-primary" />
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {CONTROLLED_SCENARIOS.map((scenario) => (
+                  <button
+                    key={scenario.path}
+                    type="button"
+                    disabled={simulation.isPending}
+                    onClick={() => {
+                      setSimulationMessage(null);
+                      simulation.mutate(scenario);
+                    }}
+                    className="rounded-lg border border-border px-3 py-2 text-xs font-medium transition-colors hover:border-primary/60 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {scenario.label}
+                  </button>
+                ))}
+              </div>
+              {simulation.isPending && (
+                <p className="mt-3 text-xs text-muted-foreground">Recording synthetic event…</p>
+              )}
+              {simulationMessage && (
+                <p className="mt-3 text-xs text-primary" role="status">
+                  {simulationMessage}
+                </p>
+              )}
+            </Panel>
+            <Panel className="p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Simulation readiness</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Controlled detector coverage, not real-world deception effectiveness
+                  </p>
+                </div>
+                <span className="mono text-2xl font-semibold">
+                  {assessment.data ? `${assessment.data.readiness_score}%` : '—'}
+                </span>
+              </div>
+              <div
+                className="mt-4 h-2 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-label="Controlled simulation detector coverage"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={assessment.data?.readiness_score ?? 0}
+              >
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${assessment.data?.readiness_score ?? 0}%` }}
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {assessment.data
+                  ? `${assessment.data.passed} of ${assessment.data.total} channel checks matched`
+                  : 'Loading controlled checks…'}
+              </p>
+              <div className="mt-3 space-y-2">
+                {(assessment.data?.checks ?? []).map((item) => (
+                  <div key={item.channel} className="flex items-center gap-2 text-xs">
+                    <span className={item.passed ? 'text-primary' : 'text-destructive'}>
+                      {item.passed ? 'PASS' : 'CHECK'}
+                    </span>
+                    <span className="capitalize text-muted-foreground">{item.channel}</span>
+                    <span className="truncate">{item.detector}</span>
+                  </div>
+                ))}
+              </div>
+            </Panel>
           </div>
           <div className="grid gap-5 xl:grid-cols-[1.25fr_.75fr]">
             <Panel className="overflow-hidden">

@@ -4,6 +4,7 @@ import time
 from datetime import timezone
 from typing import Callable
 
+from honeyprobe.assessment import make_deception_readiness_assessment
 from honeyprobe.models import EventInput, SelfTestResult, SelfTestRun
 from honeyprobe.phase2_adapter import analyze_phase2_message
 from honeyprobe.phase3_adapter import run_phase3_dry_run
@@ -119,6 +120,11 @@ def run_self_tests() -> SelfTestRun:
             "Phase 2 detection rules passed their controlled fixture.",
         ),
         (
+            "Controlled simulation coverage",
+            _controlled_simulation_coverage_check,
+            "All supported local simulation channels matched their expected detector.",
+        ),
+        (
             "Phase 3 dry-run engine",
             _phase3_dry_run_check,
             "Phase 3 target checks passed with all changes disabled.",
@@ -218,6 +224,16 @@ def _phase2_detection_check() -> str:
         connection.execute("ROLLBACK TO honeyprobe_finding_self_test")
         connection.execute("RELEASE honeyprobe_finding_self_test")
     return "Phase 2 matched a synthetic fixture and stored a transient finding linked to event evidence; the check was rolled back."
+
+
+def _controlled_simulation_coverage_check() -> str:
+    assessment = make_deception_readiness_assessment()
+    if assessment.readiness_score != 100:
+        raise RuntimeError("Controlled detector coverage is incomplete")
+    return (
+        f"{assessment.readiness_score}% controlled local detector coverage across "
+        f"{assessment.total} channels; this is not a real-world effectiveness score."
+    )
 
 
 def _phase3_dry_run_check() -> str:

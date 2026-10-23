@@ -73,6 +73,25 @@ class DatabaseInteractionInput(StrictModel):
     session_id: str | None = Field(default=None, max_length=128)
 
 
+class SshInteractionInput(StrictModel):
+    interaction: Literal[
+        "connection_attempt",
+        "banner_probe",
+        "authentication_attempt",
+        "command_attempt",
+    ]
+
+
+class MobileInteractionInput(StrictModel):
+    interaction: Literal[
+        "app_open",
+        "deep_link_probe",
+        "permission_probe",
+        "api_probe",
+    ]
+    component: Literal["home", "help", "profile", "admin", "sync"] = "home"
+
+
 class CowrieEntry(StrictModel):
     eventid: str = Field(max_length=100)
     src_ip: str | None = Field(default=None, max_length=64)
@@ -246,6 +265,24 @@ class SelfTestRun(StrictModel):
     failed: int
     blocked: int
     completed_at: datetime
+
+
+class DeceptionReadinessCheck(StrictModel):
+    channel: Literal["web", "ssh", "database", "mobile"]
+    passed: bool
+    detector: str
+    detail: str
+
+
+class DeceptionReadinessAssessment(StrictModel):
+    readiness_score: int = Field(ge=0, le=100)
+    passed: int
+    total: int
+    status: Literal["ready", "partial", "unavailable"]
+    scope: Literal["controlled_simulation"] = "controlled_simulation"
+    checks: list[DeceptionReadinessCheck]
+    limitations: list[str]
+    evaluated_at: datetime
 
 
 class SystemHealth(StrictModel):

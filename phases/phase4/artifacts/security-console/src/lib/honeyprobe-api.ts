@@ -69,6 +69,22 @@ export type DetectionFinding = {
   created_at: string;
 };
 
+export type DeceptionReadinessAssessment = {
+  readiness_score: number;
+  passed: number;
+  total: number;
+  status: 'ready' | 'partial' | 'unavailable';
+  scope: 'controlled_simulation';
+  checks: {
+    channel: 'web' | 'ssh' | 'database' | 'mobile';
+    passed: boolean;
+    detector: string;
+    detail: string;
+  }[];
+  limitations: string[];
+  evaluated_at: string;
+};
+
 export type SelfTestResult = {
   name: string;
   status: 'pass' | 'fail' | 'blocked' | 'not_run';

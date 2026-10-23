@@ -67,6 +67,9 @@ ATTACK_RULES = [
     ("Command Injection", "high", re.compile(r"(?:;\s*(?:id|whoami|uname|cat|wget|curl)|\$\(|`[^`]+`|&&\s*(?:id|whoami|uname)|\|\s*(?:id|whoami|uname))", re.I), "Command-injection-like input"),
     ("Path Traversal", "medium", re.compile(r"(?:\.\./){2,}|%2e%2e(?:%2f|/)", re.I), "Path traversal sequence"),
     ("Reconnaissance", "medium", re.compile(r"(?:nmap|masscan|nikto|gobuster|dirsearch|wpscan|port\s*scan|service\s*probe)", re.I), "Known scanning/probing indicator"),
+    ("Database Schema Probe", "medium", re.compile(r"(?:database|db)[_\s-]+schema[_\s-]+probe|schema[_\s-]+probe", re.I), "A simulated database schema inspection was observed"),
+    ("Remote Command Attempt", "high", re.compile(r"(?:ssh|remote)[_\s-]+(?:command|shell)[_\s-]+attempt", re.I), "A simulated remote command attempt was observed; no command was executed"),
+    ("Mobile Endpoint Probe", "medium", re.compile(r"(?:mobile|android).{0,40}(?:deep[_\s-]?link|permission|api).{0,30}(?:probe|enumeration|attempt)", re.I), "A simulated mobile endpoint or permission probe was observed"),
 ]
 
 FINGERPRINT_RULES = [

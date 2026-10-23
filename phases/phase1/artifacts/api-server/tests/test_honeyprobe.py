@@ -89,6 +89,102 @@ class HoneyProbeApiTests(unittest.TestCase):
         self.assertNotIn("password", accepted.json()["metadata"])
         self.assertFalse(accepted.json()["metadata"]["login_data_collected"])
 
+    def test_controlled_ssh_mobile_and_database_scenarios_create_safe_findings(self) -> None:
+        scenarios = [
+            (
+                "/api/decoys/ssh/interaction",
+                {"interaction": "banner_probe"},
+                "ssh",
+                "Fingerprinting: SSH version probe",
+            ),
+            (
+                "/api/decoys/database/interaction",
+                {
+                    "operation_category": "schema_probe",
+                    "target": "decoy://ledger/schema",
+                },
+                "database",
+                "Database Schema Probe",
+            ),
+            (
+                "/api/decoys/mobile/interaction",
+                {"interaction": "deep_link_probe", "component": "admin"},
+                "mobile",
+                "Mobile Endpoint Probe",
+            ),
+        ]
+        for path, payload, source_type, expected_detector in scenarios:
+            with self.subTest(source_type=source_type):
+                response = self.client.post(path, json=payload)
+                self.assertEqual(response.status_code, 201)
+                event = response.json()
+                self.assertEqual(event["source_type"], source_type)
+                self.assertTrue(event["metadata"]["simulated"])
+                self.assertIsNone(event["source_address"])
+                self.assertTrue(
+                    any(
+                        finding["category"] == expected_detector
+                        for finding in event["metadata"]["phase2_analysis"]
+                    )
+                )
+                findings = self.client.get(
+                    "/api/findings",
+                    params={"event_id": event["id"], "include_demo": "true"},
+                )
+                self.assertEqual(findings.status_code, 200)
+                self.assertEqual(findings.json()[0]["rule_name"], expected_detector)
+                evidence = self.client.get(
+                    f"/api/evidence/{event['id']}?include_demo=true"
+                )
+                self.assertEqual(evidence.status_code, 200)
+                self.assertEqual(findings.json()[0]["evidence_id"], evidence.json()["id"])
+
+    def test_ssh_and_mobile_simulators_reject_credentials_and_raw_device_data(self) -> None:
+        rejected_ssh = self.client.post(
+            "/api/decoys/ssh/interaction",
+            json={
+                "interaction": "command_attempt",
+                "password": "SIMULATED-SECRET-MUST-NOT-ECHO",
+                "command": "SIMULATED-COMMAND-MUST-NOT-ECHO",
+            },
+        )
+        self.assertEqual(rejected_ssh.status_code, 422)
+        self.assertNotIn("SIMULATED-SECRET-MUST-NOT-ECHO", rejected_ssh.text)
+        self.assertNotIn("SIMULATED-COMMAND-MUST-NOT-ECHO", rejected_ssh.text)
+        self.assertNotIn(
+            "SIMULATED-SECRET-MUST-NOT-ECHO",
+            _db_path.read_bytes().decode("latin-1"),
+        )
+
+        rejected_mobile = self.client.post(
+            "/api/decoys/mobile/interaction",
+            json={
+                "interaction": "app_open",
+                "device_id": "DEVICE-ID-MUST-NOT-ECHO",
+                "access_token": "MOBILE-TOKEN-MUST-NOT-ECHO",
+            },
+        )
+        self.assertEqual(rejected_mobile.status_code, 422)
+        self.assertNotIn("DEVICE-ID-MUST-NOT-ECHO", rejected_mobile.text)
+        self.assertNotIn("MOBILE-TOKEN-MUST-NOT-ECHO", rejected_mobile.text)
+        self.assertNotIn("DEVICE-ID-MUST-NOT-ECHO", _db_path.read_bytes().decode("latin-1"))
+        self.assertNotIn("MOBILE-TOKEN-MUST-NOT-ECHO", _db_path.read_bytes().decode("latin-1"))
+
+    def test_deception_assessment_reports_controlled_detector_coverage(self) -> None:
+        response = self.client.get("/api/assessment/deception")
+        self.assertEqual(response.status_code, 200)
+        assessment = response.json()
+        self.assertEqual(assessment["scope"], "controlled_simulation")
+        self.assertEqual(assessment["readiness_score"], 100)
+        self.assertEqual(assessment["passed"], assessment["total"])
+        self.assertEqual(
+            {item["channel"] for item in assessment["checks"]},
+            {"web", "ssh", "database", "mobile"},
+        )
+        self.assertTrue(
+            any("not whether a real attacker" in item for item in assessment["limitations"])
+        )
+
     def test_loopback_web_decoy_records_real_visit_and_phase2_evidence(self) -> None:
         response = self.client.get(
             "/decoy/%2e%2e/%2e%2e/local-check",
