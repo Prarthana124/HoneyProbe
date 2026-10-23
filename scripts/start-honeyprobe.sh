@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PHASE1_DIR="$ROOT_DIR/phases/phase1"
 PHASE4_DIR="$ROOT_DIR/phases/phase4"
+export UV_PYTHON="${UV_PYTHON:-3.13}"
 WEB_PORT=5000
 GATEWAY_PORT="${HONEYPROBE_GATEWAY_PORT:-8080}"
 INTERNAL_PORT="${HONEYPROBE_INTERNAL_PORT:-8180}"
@@ -71,10 +72,16 @@ if ! phase4_console_dependencies_ready; then
   exit 1
 fi
 
-if [[ ! -x "$ROOT_DIR/.pythonlibs/bin/python" ]] || \
-  ! "$ROOT_DIR/.pythonlibs/bin/python" -c 'import fastapi, httpx, uvicorn' >/dev/null 2>&1; then
+if ! (cd "$PHASE1_DIR" && uv run --no-sync --locked --project "$PHASE1_DIR" \
+  python -c 'import fastapi, httpx, uvicorn' >/dev/null 2>&1); then
   echo "Installing the locked Phase 1 Python dependencies..."
   uv sync --locked --project "$PHASE1_DIR"
+fi
+
+if ! (cd "$PHASE1_DIR" && uv run --no-sync --locked --project "$PHASE1_DIR" \
+  python -c 'import fastapi, httpx, uvicorn' >/dev/null 2>&1); then
+  echo "Phase 1 Python dependencies are not ready with Python ${UV_PYTHON}." >&2
+  exit 1
 fi
 
 assert_port_available() {

@@ -14,3 +14,11 @@ Standalone Phase 4 artifact workflow can start before the combined HoneyProbe la
 **Why:** the artifact workflow failed before installation and started successfully after the Phase 4 dependencies were present.
 
 **How to apply:** when only the standalone console artifact fails with a missing Vite executable, check install timing and workflow status before changing application code or lockfiles.
+
+## Combined workflow runtime alignment
+
+The root Replit Python module must meet the backend's minimum Python version, and `uv` must use that same interpreter version. A `uv` environment created with a newer Python than the Replit wrapper can mix standard-library and site-package versions; Uvicorn's reload subprocess may then fail even when imports appear to work. The standalone API artifact also shares ports with the combined Project workflow.
+
+**Why:** the root workflow originally combined a Python 3.14 virtual environment with a Python 3.12 wrapper, which broke Uvicorn's reload child. Aligning the Replit module and `UV_PYTHON` to Python 3.13 fixed reload and combined startup.
+
+**How to apply:** before changing backend dependencies, compare the root Replit runtime, `pyproject.toml`'s Python requirement, and `.pythonlibs/pyvenv.cfg`; pin `UV_PYTHON` to the installed compatible minor and resync with the locked `uv` project. Keep the standalone API workflow stopped while the combined Project workflow runs.

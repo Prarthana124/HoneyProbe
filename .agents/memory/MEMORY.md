@@ -1,1 +1,1 @@
-- [HoneyProbe project requirements](honeyprobe-project-requirements.md) — use the user's master prompt as the acceptance checklist for work across all four phases.
+- [HoneyProbe project requirements](honeyprobe-project-requirements.md) — master acceptance checklist plus Replit runtime and combined-workflow constraints.
