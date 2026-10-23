@@ -95,7 +95,7 @@ Security scans are run through Replit's Security tools.
 - No Clerk tenant/keys are configured yet; live console authorization requires the workspace owner to configure them and the verified operator allowlist.
 - Current event records retain source IP when the source provides it, but do not model source/destination ports, destination IP, protocol, user-agent, or ASN/geolocation enrichment.
 - The API self-test runner currently covers nine basic schema, storage, ingestion, route, query, export, detection, and Phase 3 dry-run checks; it is not yet the structured readiness/security/restart report described in the master completion prompt.
-- The adaptive-action endpoint records preview-only Phase 3 results but does not yet produce a recommendation linked to a specific finding and its evidence.
+- Adaptive-action previews are tied to a non-test finding and its exact linked evidence, include the evidence digest in the recommendation, and persist in the audit log. They remain preview-only; no live apply route exists.
 - The dependency audit still reports `braces@3.0.3` without a compatible patched release and `postcss-selector-parser@6.0.10`, whose available fix is a major-version update. Do not force that update without compatibility testing.
 - The fictional web decoy is local-only and does not collect credentials or operate on host resources; the database decoy is a simulator and no SSH/Cowrie service starts. Mobile telemetry, threat-intelligence enrichment, and case-management integrations are absent.
 - Source profiles are aggregated from local events only; there is no external attribution.

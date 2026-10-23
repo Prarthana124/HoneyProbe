@@ -355,6 +355,33 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
         self.assertEqual(finding["evidence_id"], evidence["id"])
         self.assertNotIn("../../local-check", json.dumps(evidence))
 
+        status, preview = self.request(
+            "POST",
+            "/api/adaptive-actions/dry-run",
+            {
+                "action": "restrict_file_permissions",
+                "finding_id": finding["id"],
+                "reason": "Isolated decoy-to-evidence acceptance check.",
+            },
+            headers={"x-honeyprobe-operator": "local-restart-test-operator"},
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(preview["mode"], "dry_run")
+        self.assertFalse(preview["applied"])
+        self.assertEqual(preview["finding_id"], finding["id"])
+        self.assertEqual(preview["evidence_id"], evidence["id"])
+        self.assertEqual(
+            preview["preview"]["evidence_context"]["evidence_sha256"],
+            evidence["sha256"],
+        )
+        self.assertEqual(
+            preview["preview"]["recommendation"]["basis"]["evidence_sha256"],
+            evidence["sha256"],
+        )
+        status, audit = self.request("GET", "/api/adaptive-actions/audit")
+        self.assertEqual(status, 200)
+        self.assertIn(preview["id"], {item["id"] for item in audit})
+
         self.stop_service()
         self.start_service()
         status, stored_event = self.request("GET", f"/api/events/{event_id}")
@@ -382,6 +409,18 @@ class ServiceRestartIntegrationTests(unittest.TestCase):
         self.assertEqual(stored_evidence_by_id["id"], evidence["id"])
         self.assertEqual(stored_evidence_by_id["event_id"], event_id)
         self.assertEqual(stored_evidence_by_id["sha256"], evidence["sha256"])
+        status, stored_audit = self.request("GET", "/api/adaptive-actions/audit")
+        self.assertEqual(status, 200)
+        persisted_preview = next(
+            item for item in stored_audit if item["id"] == preview["id"]
+        )
+        self.assertFalse(persisted_preview["applied"])
+        self.assertEqual(persisted_preview["finding_id"], finding["id"])
+        self.assertEqual(persisted_preview["evidence_id"], evidence["id"])
+        self.assertEqual(
+            persisted_preview["preview"]["evidence_context"]["evidence_sha256"],
+            evidence["sha256"],
+        )
 
 
 if __name__ == "__main__":

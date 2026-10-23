@@ -810,6 +810,27 @@ class HoneyProbeApiTests(unittest.TestCase):
                 },
             )
 
+        invalid_action = self.client.post(
+            "/api/adaptive-actions/dry-run",
+            headers={"x-honeyprobe-operator": "dry-run-validation-operator"},
+            json={
+                "action": "block_source_ip",
+                "finding_id": real_finding["id"],
+                "reason": "Validate unsupported action rejection.",
+            },
+        )
+        self.assertEqual(invalid_action.status_code, 422)
+        empty_reason = self.client.post(
+            "/api/adaptive-actions/dry-run",
+            headers={"x-honeyprobe-operator": "dry-run-validation-operator"},
+            json={
+                "action": "restrict_file_permissions",
+                "finding_id": real_finding["id"],
+                "reason": "",
+            },
+        )
+        self.assertEqual(empty_reason.status_code, 422)
+
         missing = request_preview("finding_does_not_exist")
         self.assertEqual(missing.status_code, 404)
 
