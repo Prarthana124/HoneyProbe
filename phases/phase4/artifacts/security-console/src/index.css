@@ -41,34 +41,34 @@
 }
 
 :root {
-  --background: 216 46% 7%;
-  --foreground: 212 32% 91%;
-  --border: 213 34% 21%;
-  --input: 213 35% 23%;
-  --ring: 198 92% 62%;
-  --card: 214 43% 10%;
-  --card-foreground: 212 32% 91%;
-  --card-border: 213 34% 21%;
-  --sidebar: 216 52% 6%;
-  --sidebar-foreground: 211 27% 75%;
-  --sidebar-border: 213 35% 17%;
-  --sidebar-primary: 198 92% 62%;
-  --sidebar-primary-foreground: 216 46% 7%;
-  --sidebar-accent: 214 40% 13%;
-  --sidebar-accent-foreground: 212 32% 94%;
-  --primary: 198 92% 62%;
-  --primary-foreground: 216 46% 7%;
-  --secondary: 213 34% 16%;
-  --secondary-foreground: 212 28% 88%;
-  --muted: 213 36% 14%;
-  --muted-foreground: 213 17% 63%;
-  --accent: 165 57% 56%;
-  --accent-foreground: 216 46% 7%;
-  --destructive: 350 75% 65%;
-  --destructive-foreground: 216 46% 7%;
+  --background: 214 53% 7%;
+  --foreground: 210 32% 91%;
+  --border: 215 37% 21%;
+  --input: 215 37% 24%;
+  --ring: 188 78% 53%;
+  --card: 213 48% 10%;
+  --card-foreground: 210 32% 91%;
+  --card-border: 215 37% 22%;
+  --sidebar: 215 59% 6%;
+  --sidebar-foreground: 211 25% 73%;
+  --sidebar-border: 215 42% 16%;
+  --sidebar-primary: 188 78% 53%;
+  --sidebar-primary-foreground: 214 53% 7%;
+  --sidebar-accent: 213 48% 12%;
+  --sidebar-accent-foreground: 210 32% 94%;
+  --primary: 188 78% 53%;
+  --primary-foreground: 214 53% 7%;
+  --secondary: 214 39% 16%;
+  --secondary-foreground: 210 28% 88%;
+  --muted: 214 42% 13%;
+  --muted-foreground: 211 19% 63%;
+  --accent: 158 56% 48%;
+  --accent-foreground: 214 53% 7%;
+  --destructive: 353 73% 62%;
+  --destructive-foreground: 214 53% 7%;
   --app-font-sans: 'Space Grotesk', sans-serif;
   --app-font-mono: 'IBM Plex Mono', monospace;
-  --radius: 0.45rem;
+  --radius: 0.35rem;
   --elevate-1: rgba(115, 184, 218, 0.035);
   --elevate-2: rgba(115, 184, 218, 0.07);
 }
@@ -94,17 +94,21 @@
 
 .grid-hairline {
   background:
-    radial-gradient(ellipse at 85% 0%, hsl(211 62% 15% / .18), transparent 45%),
+    radial-gradient(ellipse at 83% 0%, hsl(197 70% 18% / .12), transparent 43%),
     hsl(var(--background));
 }
 
-/* Dense instrument-panel surfaces: crisp borders, restrained depth, no decorative glare. */
+/* Compact analyst console: quiet hierarchy, precise borders, no decorative glare. */
 [data-testid^="panel-"], section.rounded-lg.border {
-  box-shadow: 0 1px 0 hsl(210 70% 90% / .025), 0 8px 22px hsl(220 70% 2% / .13);
+  box-shadow: 0 1px 0 hsl(210 70% 90% / .025), 0 5px 16px hsl(220 70% 2% / .16);
 }
 
+table { border-collapse: collapse; }
+table thead { background: hsl(214 42% 13% / .75); }
+table th { white-space: nowrap; }
 table tbody tr { transition: background-color 140ms ease-out; }
-table tbody tr:hover { background-color: hsl(var(--primary) / .035); }
+table tbody tr:hover { background-color: hsl(var(--primary) / .045); }
+section.rounded-md.border { background-image: linear-gradient(115deg, hsl(195 65% 55% / .018), transparent 36%); }
 input::placeholder, textarea::placeholder { opacity: .62; }
 
 button, a, input, select, textarea {
@@ -114,6 +118,21 @@ button, a, input, select, textarea {
 }
 
 button:disabled { cursor: not-allowed; }
+
+.console-nav-link { position: relative; }
+.console-nav-link[aria-current="page"]::before {
+  position: absolute;
+  inset: 7px auto 7px 0;
+  width: 2px;
+  border-radius: 2px;
+  background: hsl(var(--primary));
+  content: "";
+}
+.console-header {
+  background: hsl(var(--background) / .94);
+  box-shadow: 0 1px 0 hsl(var(--primary) / .025);
+}
+::selection { color: hsl(var(--foreground)); background: hsl(var(--primary) / .28); }
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: hsl(var(--background)); }
