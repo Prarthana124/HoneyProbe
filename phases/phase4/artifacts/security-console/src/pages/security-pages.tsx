@@ -1,11 +1,12 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { ArrowDownToLine, ArrowUpRight, Check, Clipboard, Copy, Download, FileCheck2, Filter, Hash, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Terminal, TimerReset, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpRight, Check, Clipboard, Copy, Download, FileCheck2, Filter, Hash, RefreshCw, Search, ShieldCheck, Terminal, TimerReset, X } from 'lucide-react';
 import { Link } from 'wouter';
-import { adaptationEvents, attackTypes, formatDateTime, formatShortTime, incidents, recentEvents, reportPayload, type Incident } from '@/data/demo-data';
+import { adaptationEvents, formatDateTime, formatShortTime, incidents, recentEvents, reportPayload, type Incident } from '@/data/demo-data';
 import { ConsoleShell, PageHeader, Panel, ScoreBar, StatusPill, useSystemStatus } from '@/components/console-shell';
+import { ActivityBars, DistributionRing } from '@/components/dashboard-charts';
 
 function MetricCard({ label, value, detail, accent = 'primary' }: { label: string; value: string; detail: string; accent?: 'primary' | 'accent' | 'danger' }) {
-  return <Panel className="console-enter p-5"><div className="flex items-start justify-between"><div className="mono text-[10px] uppercase tracking-[.18em] text-muted-foreground">{label}</div><div className={`h-2 w-2 rounded-full ${accent === 'primary' ? 'bg-primary' : accent === 'accent' ? 'bg-accent' : 'bg-destructive'}`} /></div><div className="mt-4 text-3xl font-semibold tracking-[-.04em]">{value}</div><div className="mt-1 text-xs text-muted-foreground">{detail}</div></Panel>;
+  return <Panel className={`dashboard-metric console-enter border-t-2 ${accent === 'primary' ? 'border-t-primary' : accent === 'accent' ? 'border-t-accent' : 'border-t-destructive'}`}><div className="flex items-start justify-between"><div className="mono text-[9px] uppercase tracking-[.14em] text-muted-foreground">{label}</div><div className={`h-1.5 w-1.5 rounded-full ${accent === 'primary' ? 'bg-primary' : accent === 'accent' ? 'bg-accent' : 'bg-destructive'}`} /></div><div className="mt-2 text-2xl font-semibold tracking-[-.04em]">{value}</div><div className="mt-0.5 text-[10px] text-muted-foreground">{detail}</div></Panel>;
 }
 
 function KindIcon({ kind }: { kind: string }) {
@@ -14,20 +15,170 @@ function KindIcon({ kind }: { kind: string }) {
 
 export function Dashboard() {
   const system = useSystemStatus();
-  const counts = useMemo(() => attackTypes.map((type) => ({ type, count: incidents.filter((incident) => incident.attackType === type).length })), []);
-  const maxCount = Math.max(...counts.map((item) => item.count));
-  return <ConsoleLayout><PageHeader eyebrow="01 / operational picture" title="Dashboard overview" description="A focused read on what the system observed, how it responded, and where its controls adapted." action={<div className="flex items-center gap-2 rounded-full border border-accent/25 bg-accent/10 px-3 py-2 text-[10px] uppercase tracking-wider text-accent"><span className="status-pulse h-1.5 w-1.5 rounded-full bg-accent" /> Demo dataset · Phase 1–3</div>} />
-    <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Incidents observed" value={String(incidents.length)} detail="Across the current demo window" /><MetricCard label="High / critical" value={String(incidents.filter((incident) => incident.severity === 'High' || incident.severity === 'Critical').length)} detail="Requires analyst attention" accent="danger" /><MetricCard label="Detection confidence" value="88.3%" detail="Weighted across incident set" /><MetricCard label="Adaptations applied" value={String(adaptationEvents.length)} detail="Most recent 24-hour window" accent="accent" /></div>
-    <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
-      <Panel className="overflow-hidden"><div className="flex items-center justify-between border-b border-border px-5 py-4"><div><h2 className="text-sm font-semibold">Detection and attack scores</h2><p className="mt-1 text-xs text-muted-foreground">Confidence by incident · newest first</p></div><Link href="/incidents" className="flex items-center gap-1 text-xs text-primary hover:underline" data-testid="link-dashboard-incidents">View all <ArrowUpRight size={13} /></Link></div><div className="divide-y divide-border/70">{incidents.slice(0, 4).map((incident) => <div key={incident.id} className="grid gap-4 px-5 py-4 md:grid-cols-[1fr_170px_170px] md:items-center" data-testid={`row-dashboard-incident-${incident.id}`}><div><div className="flex items-center gap-2"><span className="mono text-xs text-primary">{incident.id}</span><StatusPill value={incident.severity} /></div><div className="mt-1 text-sm font-medium">{incident.attackType}</div><div className="mt-1 text-xs text-muted-foreground">{incident.behaviour}</div><div className="mt-1 text-[11px] text-muted-foreground">{formatShortTime(incident.timestamp)} · {incident.source}</div></div><ScoreBar label="detection" score={incident.detectionScore} /><ScoreBar label="attack" score={incident.attackScore} /></div>)}</div></Panel>
-      <Panel className="p-5"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Attack profile</h2><p className="mt-1 text-xs text-muted-foreground">Observed type distribution</p></div><SlidersHorizontal size={16} className="text-muted-foreground" /></div><div className="mt-6 space-y-5">{counts.map((item) => <div key={item.type}><div className="mb-2 flex justify-between text-xs"><span>{item.type}</span><span className="mono text-muted-foreground">{String(item.count).padStart(2, '0')}</span></div><div className="h-2 rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${(item.count / maxCount) * 100}%` }} /></div></div>)}</div><div className="mt-7 border-t border-border pt-4"><div className="flex justify-between text-xs text-muted-foreground"><span>Most frequent</span><span className="font-medium text-foreground">Credential stuffing</span></div></div></Panel>
-    </div>
-    <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_1fr_1fr]">
-      <Panel className="p-5"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Recent events</h2><p className="mt-1 text-xs text-muted-foreground">Signals from the active response loop</p></div><TimerReset size={16} className="text-muted-foreground" /></div><div className="mt-4 space-y-1">{recentEvents.slice(0, 5).map((event) => <div key={event.id} className="flex gap-3 rounded-lg p-2.5 transition-colors hover:bg-muted/50" data-testid={`event-recent-${event.id}`}><KindIcon kind={event.kind} /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-medium">{event.label}</span><span className="mono text-[10px] text-muted-foreground">{formatShortTime(event.timestamp)}</span></div><div className="mt-1 text-xs text-muted-foreground">{event.detail}</div></div></div>)}</div></Panel>
-      <Panel className="p-5"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Adaptation history</h2><p className="mt-1 text-xs text-muted-foreground">Latest control changes</p></div><Link href="/adaptation" className="text-xs text-primary hover:underline" data-testid="link-dashboard-adaptation">Open log</Link></div><div className="mt-5 space-y-4">{adaptationEvents.slice(0, 3).map((event) => <div key={event.id} className="relative border-l border-primary/35 pl-4" data-testid={`dashboard-adaptation-${event.id}`}><div className="absolute -left-[4px] top-1 h-2 w-2 rounded-full bg-primary" /><div className="mono text-[10px] text-muted-foreground">{formatShortTime(event.timestamp)} · {event.phase}</div><div className="mt-1 text-xs font-medium">{event.action}</div><div className="mt-1 text-[11px] leading-4 text-muted-foreground">{event.outcome}</div></div>)}</div></Panel>
-      <Panel className="p-5"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Current system status</h2><p className="mt-1 text-xs text-muted-foreground">Health signals are separate from demo records</p></div><span className="mono text-[10px] text-muted-foreground">{system.lastUpdated === '—' ? 'waiting' : formatShortTime(system.lastUpdated)}</span></div><div className="mt-5 grid gap-2 sm:grid-cols-2">{[['API reachability', system.api === 'reachable' ? 'Reachable' : system.api === 'checking' ? 'Checking' : 'Unavailable', system.api === 'reachable' ? 'good' : system.api === 'checking' ? 'warn' : 'bad'], ['Detection engine', 'Nominal', 'good'], ['Adaptation loop', 'Nominal', 'good'], ['Report integrity', 'Verified', 'good']].map(([label, value, tone]) => <div key={label} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-3"><span className="text-xs text-muted-foreground">{label}</span><StatusPill value={value} tone={tone as 'good' | 'warn' | 'bad'} /></div>)}</div></Panel>
-    </div>
-  </ConsoleLayout>;
+  const activity = useMemo(() => Array.from({ length: 8 }, (_, slot) => {
+    const startHour = slot * 3;
+    const value = incidents.filter((incident) => {
+      const hour = new Date(incident.timestamp).getUTCHours();
+      return hour >= startHour && hour < startHour + 3;
+    }).length;
+    return { label: String(startHour).padStart(2, '0'), value };
+  }), []);
+  const severityCounts = useMemo(() => incidents.reduce<Record<Incident['severity'], number>>((result, incident) => {
+    result[incident.severity] += 1;
+    return result;
+  }, { Critical: 0, High: 0, Medium: 0, Low: 0 }), []);
+  const severityColors: Record<Incident['severity'], string> = {
+    Critical: 'hsl(var(--severity-critical))',
+    High: 'hsl(var(--severity-high))',
+    Medium: 'hsl(var(--severity-medium))',
+    Low: 'hsl(var(--severity-low))',
+  };
+  const severityDistribution = Object.entries(severityCounts).map(([label, value]) => ({
+    label,
+    value,
+    color: severityColors[label as Incident['severity']],
+  }));
+
+  return (
+    <ConsoleLayout>
+      <PageHeader
+        eyebrow="01 / operational picture"
+        title="Security Operations Dashboard"
+        description="Live system status and a clear summary of observed activity, findings, and response history."
+        action={<div className="flex items-center gap-2 rounded border border-accent/25 bg-accent/10 px-2.5 py-1.5 text-[9px] uppercase tracking-wider text-accent"><span className="status-pulse h-1.5 w-1.5 rounded-full bg-accent" /> Demo dataset · Phase 1–3</div>}
+      />
+      <div className="dashboard-metrics mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Events observed" value={String(incidents.length)} detail="Across the current demo window" />
+        <MetricCard label="High / critical" value={String(incidents.filter((incident) => incident.severity === 'High' || incident.severity === 'Critical').length)} detail="Require analyst attention" accent="danger" />
+        <MetricCard label="Detection confidence" value="88.3%" detail="Across this illustrative dataset" />
+        <MetricCard label="Adaptations applied" value={String(adaptationEvents.length)} detail="Recorded in the demo window" accent="accent" />
+      </div>
+
+      <div className="mb-3 grid gap-3 xl:grid-cols-[1.25fr_.75fr]">
+        <Panel className="p-3.5">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xs font-semibold">Recent event activity</h2>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Incidents grouped into three-hour UTC windows · demo data</p>
+            </div>
+            <TimerReset size={14} className="text-muted-foreground" />
+          </div>
+          <ActivityBars data={activity} ariaLabel="Demo incident activity grouped into three-hour UTC windows" />
+        </Panel>
+        <Panel className="p-3.5">
+          <div className="mb-2">
+            <h2 className="text-xs font-semibold">Finding severity</h2>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">Distribution across the demo incidents</p>
+          </div>
+          <DistributionRing
+            data={severityDistribution}
+            centerLabel="incidents"
+            ariaLabel="Demo incident severity distribution"
+          />
+        </Panel>
+      </div>
+
+      <div className="mb-3 grid gap-3 xl:grid-cols-[1.35fr_.65fr]">
+        <Panel className="overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border px-3.5 py-2.5">
+            <div>
+              <h2 className="text-xs font-semibold">Recent security activity</h2>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Observed incidents and response state</p>
+            </div>
+            <Link href="/incidents?mode=demo" className="flex items-center gap-1 text-[10px] text-primary hover:underline" data-testid="link-dashboard-incidents">View all <ArrowUpRight size={12} /></Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-left">
+              <thead><tr className="mono text-muted-foreground"><th>Time</th><th>Incident</th><th>Severity</th><th>Attack type</th><th>Status</th></tr></thead>
+              <tbody className="divide-y divide-border/70">
+                {incidents.slice(0, 5).map((incident) => (
+                  <tr key={incident.id} data-testid={`row-dashboard-incident-${incident.id}`}>
+                    <td className="mono text-muted-foreground">{formatShortTime(incident.timestamp)}</td>
+                    <td className="mono text-primary">{incident.id}</td>
+                    <td><StatusPill value={incident.severity} /></td>
+                    <td>{incident.attackType}</td>
+                    <td><StatusPill value={incident.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+        <Panel className="p-3.5">
+          <div className="mb-2">
+            <h2 className="text-xs font-semibold">Quick actions</h2>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">Open a demo console section</p>
+          </div>
+          <div className="grid gap-1.5">
+            {[
+              { href: '/decoys?mode=demo', label: 'Decoy interactions' },
+              { href: '/rules?mode=demo', label: 'Custom detection rules' },
+              { href: '/evidence?mode=demo', label: 'Evidence ledger' },
+              { href: '/reports?mode=demo', label: 'Generate reports' },
+            ].map((action) => (
+              <Link key={action.href} href={action.href} className="dashboard-quick-action">
+                <span>{action.label}</span><ArrowUpRight size={12} />
+              </Link>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-3">
+        <Panel className="p-3.5">
+          <div className="mb-2 flex items-center justify-between">
+            <div><h2 className="text-xs font-semibold">Recent operator activity</h2><p className="mt-0.5 text-[10px] text-muted-foreground">Signals from the demo response loop</p></div>
+            <TimerReset size={14} className="text-muted-foreground" />
+          </div>
+          <div className="space-y-1">
+            {recentEvents.slice(0, 4).map((event) => (
+              <div key={event.id} className="flex gap-2 rounded p-1.5 hover:bg-muted/30" data-testid={`event-recent-${event.id}`}>
+                <KindIcon kind={event.kind} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2"><span className="text-[10px] font-medium">{event.label}</span><span className="mono text-[9px] text-muted-foreground">{formatShortTime(event.timestamp)}</span></div>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">{event.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel className="p-3.5">
+          <div className="mb-2 flex items-center justify-between">
+            <div><h2 className="text-xs font-semibold">Adaptation history</h2><p className="mt-0.5 text-[10px] text-muted-foreground">Latest recorded control changes</p></div>
+            <Link href="/adaptation?mode=demo" className="text-[10px] text-primary hover:underline" data-testid="link-dashboard-adaptation">Open log</Link>
+          </div>
+          <div className="space-y-2">
+            {adaptationEvents.slice(0, 3).map((event) => (
+              <div key={event.id} className="relative border-l border-primary/35 py-0.5 pl-3" data-testid={`dashboard-adaptation-${event.id}`}>
+                <div className="absolute -left-[4px] top-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                <div className="mono text-[9px] text-muted-foreground">{formatShortTime(event.timestamp)} · {event.phase}</div>
+                <div className="mt-0.5 text-[10px] font-medium">{event.action}</div>
+                <div className="text-[9px] leading-4 text-muted-foreground">{event.outcome}</div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel className="p-3.5">
+          <div className="mb-2 flex items-center justify-between">
+            <div><h2 className="text-xs font-semibold">System health</h2><p className="mt-0.5 text-[10px] text-muted-foreground">API reachability is queried separately from demo records</p></div>
+            <span className="mono text-[9px] text-muted-foreground">{system.lastUpdated === '—' ? 'waiting' : formatShortTime(system.lastUpdated)}</span>
+          </div>
+          <div className="grid gap-1.5">
+            {[
+              ['API reachability', system.api === 'reachable' ? 'Reachable' : system.api === 'checking' ? 'Checking' : 'Unavailable', system.api === 'reachable' ? 'good' : system.api === 'checking' ? 'warn' : 'bad'],
+              ['Detection engine', 'Nominal', 'good'],
+              ['Adaptation loop', 'Nominal', 'good'],
+              ['Report integrity', 'Verified', 'good'],
+            ].map(([label, value, tone]) => (
+              <div key={label} className="flex items-center justify-between gap-2 border-b border-border/70 py-1.5 last:border-0">
+                <span className="text-[10px] text-muted-foreground">{label}</span>
+                <StatusPill value={value} tone={tone as 'good' | 'warn' | 'bad'} />
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+    </ConsoleLayout>);
 }
 
 function ConsoleLayout({ children }: { children: ReactNode }) {

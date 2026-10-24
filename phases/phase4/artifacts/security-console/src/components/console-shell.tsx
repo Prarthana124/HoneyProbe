@@ -65,7 +65,7 @@ export function ConsoleShell({
       <aside
         id="console-navigation"
         aria-label="Primary navigation"
-        className={`fixed inset-y-0 left-0 z-40 w-[218px] border-r border-sidebar-border bg-sidebar transition-transform duration-300 md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-40 w-[190px] border-r border-sidebar-border bg-sidebar transition-transform duration-300 md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
           <div className="flex h-full flex-col px-2.5 py-3">
           <div className="flex items-center justify-between border-b border-sidebar-border px-1.5 pb-3 pt-1">
@@ -81,7 +81,7 @@ export function ConsoleShell({
               const active = routePath === item.href;
               const Icon = item.icon;
               const href = demoMode ? `${item.href}?mode=demo` : item.href;
-              return <Link key={item.href} href={href} onClick={() => setMobileOpen(false)} aria-current={active ? 'page' : undefined} data-testid={`link-nav-${item.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} className={`console-nav-link group flex min-h-8 items-center gap-2.5 rounded px-2.5 py-1.5 text-[11px] transition-colors ${active ? 'bg-sidebar-accent text-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-foreground'}`}><Icon size={14} strokeWidth={1.8} className={active ? 'text-primary' : 'text-muted-foreground group-hover:text-primary'} /><span>{item.label}</span>{active && <ChevronRight size={12} className="ml-auto text-primary" />}</Link>;
+              return <Link key={item.href} href={href} onClick={() => setMobileOpen(false)} aria-current={active ? 'page' : undefined} data-testid={`link-nav-${item.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} className={`console-nav-link group flex min-h-8 items-center gap-2 rounded px-2 py-1.5 text-[10px] transition-colors ${active ? 'bg-sidebar-accent text-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-foreground'}`}><Icon size={13} strokeWidth={1.8} className={active ? 'text-primary' : 'text-muted-foreground group-hover:text-primary'} /><span>{item.label}</span>{active && <ChevronRight size={11} className="ml-auto text-primary" />}</Link>;
             })}
           </nav>
           <div className="mt-auto space-y-3">
@@ -94,7 +94,7 @@ export function ConsoleShell({
         </div>
       </aside>
       {mobileOpen && <button aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="fixed inset-0 z-30 bg-background/75 md:hidden" data-testid="button-dismiss-navigation" />}
-      <div className="md:pl-[218px]">
+      <div className="md:pl-[190px]">
         <header className="console-header sticky top-0 z-20 flex min-h-[50px] items-center justify-between gap-3 border-b border-border px-3 backdrop-blur-md sm:px-5 md:px-7">
           <div className="flex min-w-0 items-center gap-2.5">
             <button type="button" aria-label="Open navigation" aria-controls="console-navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)} className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden" data-testid="button-open-navigation"><Menu size={19} /></button>
@@ -113,11 +113,11 @@ export function ConsoleShell({
 }
 
 export function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
-  return <div className="mb-4 flex flex-col justify-between gap-3 border-b border-border/70 pb-3 md:mb-5 md:flex-row md:items-end md:gap-5"><div className="console-enter min-w-0"><div className="mono mb-1 text-[8px] uppercase tracking-[.2em] text-primary">{eyebrow}</div><h1 className="text-[22px] font-semibold tracking-[-.035em] text-foreground sm:text-[24px] md:text-[27px]">{title}</h1><p className="mt-1 max-w-3xl text-[11px] leading-[1.65] text-muted-foreground">{description}</p></div>{action && <div className="console-enter delay-1 shrink-0">{action}</div>}</div>;
+  return <div className="mb-3 flex flex-col justify-between gap-2 border-b border-border/70 pb-2.5 md:mb-4 md:flex-row md:items-center md:gap-4"><div className="console-enter min-w-0"><div className="mono mb-1 text-[8px] uppercase tracking-[.2em] text-primary">{eyebrow}</div><h1 className="text-[20px] font-semibold tracking-[-.035em] text-foreground sm:text-[22px] md:text-[24px]">{title}</h1><p className="mt-1 max-w-3xl text-[10px] leading-[1.55] text-muted-foreground">{description}</p></div>{action && <div className="console-enter delay-1 shrink-0">{action}</div>}</div>;
 }
 
 export function Panel({ children, className = '', testId, role }: { children: ReactNode; className?: string; testId?: string; role?: 'alert' | 'status' | 'region' }) {
-  return <section role={role} data-testid={testId} className={`rounded-md border border-card-border bg-card shadow-[0_5px_18px_hsl(218_40%_3%/.14)] ${className}`}>{children}</section>;
+  return <section role={role} data-testid={testId} className={`console-panel rounded border border-card-border bg-card shadow-[0_5px_18px_hsl(218_40%_3%/.14)] ${className}`}>{children}</section>;
 }
 
 export function StatusPill({ value, tone }: { value: string; tone?: 'good' | 'warn' | 'bad' | 'neutral' }) {

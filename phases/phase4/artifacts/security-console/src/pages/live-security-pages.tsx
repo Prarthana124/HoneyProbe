@@ -42,6 +42,7 @@ import {
   Panel,
   StatusPill,
 } from '@/components/console-shell';
+import { ActivityBars, DistributionRing } from '@/components/dashboard-charts';
 
 function LiveConsoleLayout({ children }: { children: ReactNode }) {
   const { signOut } = useClerk();
@@ -114,15 +115,15 @@ function MetricCard({
         ? 'bg-accent'
         : 'bg-primary';
   return (
-    <Panel className="console-enter p-5">
+    <Panel className="dashboard-metric console-enter border-t-2 p-3.5">
       <div className="flex items-start justify-between">
-        <div className="mono text-[10px] uppercase tracking-[.18em] text-muted-foreground">
+        <div className="mono text-[9px] uppercase tracking-[.14em] text-muted-foreground">
           {label}
         </div>
-        <div className={`h-2 w-2 rounded-full ${dot}`} />
+        <div className={`h-1.5 w-1.5 rounded-full ${dot}`} />
       </div>
-      <div className="mt-4 text-3xl font-semibold tracking-[-.04em]">{value}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
+      <div className="mt-2 text-2xl font-semibold tracking-[-.04em]">{value}</div>
+      <div className="mt-0.5 text-[10px] text-muted-foreground">{detail}</div>
     </Panel>
   );
 }
