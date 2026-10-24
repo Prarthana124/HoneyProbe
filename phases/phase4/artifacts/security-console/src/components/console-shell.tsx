@@ -45,9 +45,17 @@ export function ConsoleShell({
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const system = useSystemStatus();
-  const demoMode = new URLSearchParams(window.location.search).get('mode') === 'demo';
+  const liveAccessConfigured = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim());
+  const requestedMode = new URLSearchParams(window.location.search).get('mode');
+  const demoMode = requestedMode === 'demo' || (!liveAccessConfigured && requestedMode !== 'live');
   const routePath = location.split('?')[0] || '/';
   const activeLabel = navItems.find((item) => item.href === routePath)?.label ?? 'Dashboard';
+  const dataModeHref = demoMode
+    ? liveAccessConfigured ? routePath : `${routePath}?mode=live`
+    : `${routePath}?mode=demo`;
+  const dataModeLabel = demoMode
+    ? liveAccessConfigured ? 'Return to live' : 'Live access setup'
+    : 'View demo preview';
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground">
@@ -94,7 +102,7 @@ export function ConsoleShell({
           </div>
           <div className="flex items-center gap-2">
             <div className={`hidden items-center gap-1.5 text-[9px] font-medium uppercase tracking-[.14em] sm:flex ${demoMode ? 'text-accent' : 'text-primary'}`}><BadgeCheck size={13} />{demoMode ? 'DEMO PREVIEW' : 'LIVE API'}</div>
-            <a href={demoMode ? routePath : `${routePath}?mode=demo`} className="whitespace-nowrap rounded border border-border px-2.5 py-1.5 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground hover:border-primary/50 hover:text-primary sm:text-[10px]" data-testid="link-toggle-data-mode">{demoMode ? 'Return to live' : 'View demo preview'}</a>
+            <a href={dataModeHref} className="whitespace-nowrap rounded border border-border px-2.5 py-1.5 text-[9px] font-medium uppercase tracking-[.08em] text-muted-foreground hover:border-primary/50 hover:text-primary sm:text-[10px]" data-testid="link-toggle-data-mode">{dataModeLabel}</a>
             {authControls && <div className="ml-1">{authControls}</div>}
           </div>
         </header>

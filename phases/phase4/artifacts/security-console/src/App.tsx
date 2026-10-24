@@ -312,13 +312,15 @@ function ClerkRoutes() {
 }
 
 function App() {
+  const requestedMode = new URLSearchParams(window.location.search).get('mode');
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         {!configuredClerkPublishableKey ? (
-          new URLSearchParams(window.location.search).get('mode') === 'demo'
-            ? <DemoOnlyRouter />
-            : <AuthSetupRequired />
+          requestedMode === 'live'
+            ? <AuthSetupRequired />
+            : <DemoOnlyRouter />
         ) : (
           <WouterRouter base={basePath}>
             <ClerkRoutes />
